@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 105" fill="none">
+  <defs>
+    <linearGradient id="grad" x1="95" y1="5" x2="5" y2="95" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="55%" stop-color="#6d28d9"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer speech-bubble blob (house-shaped top, rounded sides, tail bottom-left) -->
+  <path
+    d="
+      M50 8
+      C62 8 78 10 86 20
+      C94 30 92 48 88 58
+      C85 65 78 70 70 73
+      C65 75 60 75 55 75
+      L42 95
+      L38 75
+      C30 74 20 70 14 62
+      C7 53 8 36 12 24
+      C17 11 36 8 50 8
+      Z
+    "
+    fill="url(#grad)"
+  />
+
+  <!-- White house silhouette -->
+  <!-- Roof triangle -->
+  <path
+    d="M50 18 L24 40 L31 40 L31 68 L69 68 L69 40 L76 40 Z"
+    fill="white"
+  />
+
+  <!-- Dark arched door (center, bottom of house body) -->
+  <path
+    d="M43 68 L43 54 Q43 46 50 46 Q57 46 57 54 L57 68 Z"
+    fill="#1e1b4b"
+  />
+  <!-- Door knob -->
+  <circle cx="54.5" cy="57.5" r="1.8" fill="white"/>
+
+  <!-- 2×2 window grid (upper-left of house body) -->
+  <rect x="28" y="41" width="8"  height="8"  rx="1.5" fill="#1e1b4b"/>
+  <rect x="38" y="41" width="8"  height="8"  rx="1.5" fill="#1e1b4b"/>
+  <rect x="28" y="51" width="8"  height="8"  rx="1.5" fill="#1e1b4b"/>
+  <rect x="38" y="51" width="8"  height="8"  rx="1.5" fill="#1e1b4b"/>
+</svg>
