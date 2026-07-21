@@ -26,6 +26,7 @@ export interface PaymentCredentialApproval {
   approval_id: string
   status: 'pending_approval'
   expires_at?: string | null
+  email_sent?: boolean
 }
 
 export type PaymentCredentialMutationResult = PaymentCredential | PaymentCredentialApproval

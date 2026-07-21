@@ -4,7 +4,7 @@ import { Helmet } from 'react-helmet-async'
 import { Download } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useAdminLeases, useAdminTerminateLease } from '../hooks/useLeases'
+import { useAdminLeases, useAdminTerminateLease, useAdminRecordLastPayment } from '../hooks/useLeases'
 import { useDebounce, usePagination, useToast } from '@/hooks'
 import { DataTable, type ColumnDef, type SortState } from '@/components/tables/DataTable'
 import { SearchInput, FilterBar, Select, Modal, Button, FormField, Input, Textarea, ToastContainer } from '@/components/forms'
@@ -12,13 +12,21 @@ import { PageHeader, StatusBadge } from '@/components/ui'
 import { terminateLeaseSchema, type TerminateLeaseSchema } from '@/schemas/lease.schema'
 import { formatCurrency, formatDate } from '@/utils/format'
 import { openSignedDocument } from '@/api/documentDownloads'
+import type { RecordLastPaymentResult } from '@/api/leases'
+import { useAuthStore } from '@/store/auth.store'
 
 type Lease = Record<string, unknown>
 
 export default function Leases(): React.ReactElement {
+  const currency = useAuthStore((s) => s.user?.org?.currency ?? 'KES')
   const [search, setSearch]         = useState('')
   const [statusFilter, setStatus]   = useState('')
   const [terminateId, setTerminateId] = useState<number | null>(null)
+  const [paymentLease, setPaymentLease] = useState<Lease | null>(null)
+  const [paymentResult, setPaymentResult] = useState<RecordLastPaymentResult | null>(null)
+  const [paidDate, setPaidDate]     = useState(new Date().toISOString().slice(0, 10))
+  const [paidAmount, setPaidAmount] = useState('')
+  const [paidNotes, setPaidNotes]   = useState('')
   const [sort, setSort]             = useState<SortState>({ column: 'start_date', direction: 'desc' })
   const { page, perPage, setPage, setPerPage } = usePagination()
   const debouncedSearch = useDebounce(search, 400)
@@ -38,6 +46,7 @@ export default function Leases(): React.ReactElement {
   })
 
   const { mutate: terminate, isPending: terminating } = useAdminTerminateLease()
+  const { mutate: recordPayment, isPending: recordingPayment } = useAdminRecordLastPayment()
 
   const form = useForm<TerminateLeaseSchema>({ resolver: zodResolver(terminateLeaseSchema) })
 
@@ -85,7 +94,7 @@ export default function Leases(): React.ReactElement {
     },
     {
       key: 'monthly_rent', header: 'Rent', align: 'right', sortable: true,
-      accessor: (row) => <span className="text-xs font-semibold">{formatCurrency(row.monthly_rent as number)}</span>,
+      accessor: (row) => <span className="text-xs font-semibold">{formatCurrency(row.monthly_rent as number, currency)}</span>,
     },
     {
       key: 'start_date', header: 'Start', sortable: true,
@@ -107,7 +116,7 @@ export default function Leases(): React.ReactElement {
     },
     { key: 'status', header: 'Status', sortable: true, accessor: (row) => <StatusBadge status={row.status as string} /> },
     {
-      key: 'actions', header: '', width: 'w-28',
+      key: 'actions', header: '', width: 'w-44',
       accessor: (row) => {
         const id = row.id as number
         const s  = row.status as string
@@ -117,6 +126,21 @@ export default function Leases(): React.ReactElement {
               className="rounded p-1.5 text-muted-foreground hover:bg-muted">
               <Download className="h-3.5 w-3.5" />
             </button>
+            {s === 'active' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPaidDate(new Date().toISOString().slice(0, 10))
+                  setPaidAmount('')
+                  setPaidNotes('')
+                  setPaymentResult(null)
+                  setPaymentLease(row)
+                }}
+                className="rounded px-2 py-1 text-xs text-primary hover:bg-primary/10"
+              >
+                Record Payment
+              </button>
+            )}
             {s === 'active' && (
               <button onClick={() => setTerminateId(id)} className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30">
                 Terminate
@@ -166,6 +190,82 @@ export default function Leases(): React.ReactElement {
             <Input id="term-date" type="date" {...form.register('termination_date')} />
           </FormField>
         </form>
+      </Modal>
+
+      {/* Record last payment — captures arrears for tenants onboarded mid-tenancy */}
+      <Modal
+        open={!!paymentLease}
+        onClose={() => setPaymentLease(null)}
+        title="Record Last Payment"
+        description="For tenants already renting before joining the system — enter when and how much they last paid so the system can calculate any arrears."
+        size="sm"
+        footer={
+          paymentResult ? (
+            <Button className="w-full" onClick={() => setPaymentLease(null)}>Done</Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => setPaymentLease(null)}>Cancel</Button>
+              <Button
+                loading={recordingPayment}
+                disabled={!paidAmount}
+                onClick={() => {
+                  if (!paymentLease) return
+                  recordPayment(
+                    { id: String(paymentLease.id), last_paid_date: paidDate, last_paid_amount: Number(paidAmount), notes: paidNotes || undefined },
+                    {
+                      onSuccess: (res) => { setPaymentResult(res.data); success('Last payment recorded') },
+                      onError: (err) => toastError(err, 'Failed to record payment'),
+                    }
+                  )
+                }}
+              >
+                Save
+              </Button>
+            </>
+          )
+        }
+      >
+        {paymentResult ? (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Unpaid months</p>
+              <p className="text-sm font-semibold text-foreground">{paymentResult.unpaid_months}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Total owed</p>
+              <p className="text-sm font-semibold text-foreground">{formatCurrency(paymentResult.total_owed)}</p>
+            </div>
+            {paymentResult.excess_applied > 0 && (
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Overpayment applied to arrears</p>
+                <p className="text-sm font-semibold text-emerald-600">{formatCurrency(paymentResult.excess_applied)}</p>
+              </div>
+            )}
+            <div className={`rounded-lg border p-3 ${paymentResult.arrears_balance > 0 ? 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30' : 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30'}`}>
+              <p className="text-xs text-muted-foreground">Arrears balance</p>
+              <p className={`text-lg font-bold ${paymentResult.arrears_balance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                {formatCurrency(paymentResult.arrears_balance)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {paymentResult.arrears_balance > 0
+                  ? "This is due immediately and shows on the tenant's portal and dashboard now."
+                  : 'Tenant is fully paid up to date.'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <form className="space-y-4">
+            <FormField label="Last Paid Date" htmlFor="aplast_date" required>
+              <Input id="aplast_date" type="date" max={new Date().toISOString().slice(0, 10)} value={paidDate} onChange={(e) => setPaidDate(e.target.value)} />
+            </FormField>
+            <FormField label="Amount Last Paid" htmlFor="aplast_amount" required>
+              <Input id="aplast_amount" type="number" min={0} step="0.01" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} />
+            </FormField>
+            <FormField label="Notes" htmlFor="apnotes" hint="Optional">
+              <Textarea id="apnotes" rows={2} value={paidNotes} onChange={(e) => setPaidNotes(e.target.value)} />
+            </FormField>
+          </form>
+        )}
       </Modal>
     </>
   )

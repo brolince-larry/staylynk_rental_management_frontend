@@ -3,4 +3,5 @@ export {
   useAdminLeases,
   useAdminLease,
   useAdminTerminateLease,
+  useAdminRecordLastPayment,
 } from './index'

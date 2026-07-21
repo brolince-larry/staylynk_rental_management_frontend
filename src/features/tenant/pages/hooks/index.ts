@@ -32,6 +32,7 @@ interface TenantDashboardData {
     monthly_rent?: number
     current_occupants?: number
     capacity?: number
+    cover_image?: unknown
   } | null
   next_payment?: {
     due_date: string
@@ -57,6 +58,7 @@ interface TenantDashboardData {
   }>
   payment_history?: Array<{
     id: number | string
+    payment_uuid?: string | null
     invoice_number: string
     invoice_month: string
     due_date: string
@@ -129,12 +131,12 @@ export function useTenantInvoices(params?: { status?: string; page?: number; per
   })
 }
 
-export function useTenantInvoice(id: number) {
+export function useTenantInvoice(uuid: string) {
   const orgId = useOrgId(); const userId = useUserId()
   return useQuery({
-    queryKey: QK.tenantInvoice(orgId, userId, id),
-    queryFn: () => invoicesApi.tenantGet(id).then((r) => r.data),
-    enabled: id > 0,
+    queryKey: QK.tenantInvoice(orgId, userId, uuid),
+    queryFn: () => invoicesApi.tenantGet(uuid).then((r) => r.data),
+    enabled: !!uuid,
   })
 }
 
@@ -172,7 +174,8 @@ export function useTenantBankInfo() {
 export function useSubmitBankTransfer() {
   const qc = useQueryClient(); const orgId = useOrgId(); const userId = useUserId()
   return useMutation({
-    mutationFn: (data: FormData) => paymentsApi.tenantBankTransfer(data),
+    mutationFn: ({ data, onProgress }: { data: FormData; onProgress?: (percent: number) => void }) =>
+      paymentsApi.tenantBankTransfer(data, onProgress),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: QK.tenantInvoices(orgId, userId) })
       void qc.invalidateQueries({ queryKey: QK.tenantPayments(orgId, userId) })
@@ -229,6 +232,34 @@ export function useTenantMessages(params?: { unread?: boolean; per_page?: number
   })
 }
 
+export interface TenantMessageThread {
+  id: string
+  subject: string | null
+  body: string
+  is_read: boolean
+  sender: { id: string; name: string } | null
+  receiver: { id: string; name: string } | null
+  replies: Array<{ id: string; body: string; sender: { id: string; name: string } | null; created_at: string }>
+  created_at: string
+}
+
+export function useTenantMessageThread(uuid: string | null) {
+  const orgId = useOrgId(); const userId = useUserId()
+  const qc = useQueryClient()
+  return useQuery({
+    queryKey: ['tenant', 'messages', 'thread', uuid],
+    queryFn: () =>
+      import('@/api/client').then(({ apiGet }) =>
+        apiGet<TenantMessageThread>(`/tenant/messages/${uuid}`).then((r) => {
+          void qc.invalidateQueries({ queryKey: QK.tenantMessages(orgId, userId) })
+          void qc.invalidateQueries({ queryKey: QK.tenantUnreadCount(orgId, userId) })
+          return r.data
+        })
+      ),
+    enabled: !!uuid,
+  })
+}
+
 export function useTenantUnreadCount() {
   const orgId = useOrgId(); const userId = useUserId()
   return useQuery({
@@ -243,7 +274,7 @@ export function useTenantUnreadCount() {
 export function useSendMessage() {
   const qc = useQueryClient(); const orgId = useOrgId(); const userId = useUserId()
   return useMutation({
-    mutationFn: (data: { subject?: string; body: string; parent_id?: number }) =>
+    mutationFn: (data: { subject?: string; body: string; parent_id?: string }) =>
       import('@/api/client').then(({ apiPost }) =>
         apiPost<Record<string, unknown>>('/tenant/messages', data)
       ),

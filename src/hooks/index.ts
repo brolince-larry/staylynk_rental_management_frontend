@@ -219,3 +219,31 @@ export function usePrevious<T>(value: T): T | undefined {
   useEffect(() => { ref.current = value }, [value])
   return ref.current
 }
+
+// ─── useBodyScrollLock ────────────────────────────────────────────────────
+// Freezes background scroll while an overlay (modal, dialog, lightbox, fullscreen
+// viewer) is open, and reserves the scrollbar's width as padding so the layout
+// doesn't shift sideways when the scrollbar disappears. Use on every full-screen
+// overlay so the page never jumps behind it, regardless of which feature renders it.
+// A shared counter lets multiple overlays stack (e.g. a confirm dialog opened on
+// top of another modal) without one closing and prematurely unlocking the page.
+let scrollLockCount = 0
+
+export function useBodyScrollLock(active: boolean): void {
+  useEffect(() => {
+    if (!active) return
+    if (scrollLockCount === 0) {
+      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
+      document.body.style.overflow = 'hidden'
+      if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`
+    }
+    scrollLockCount += 1
+    return () => {
+      scrollLockCount -= 1
+      if (scrollLockCount === 0) {
+        document.body.style.overflow = ''
+        document.body.style.paddingRight = ''
+      }
+    }
+  }, [active])
+}

@@ -12,6 +12,7 @@ import { FilterBar, Select, Modal, Button, FormField, Input, ToastContainer } fr
 import { PageHeader, StatusBadge, StatCard, ProgressBar } from '@/components/ui'
 import { formatCurrency, formatDate } from '@/utils/format'
 import { rentPaymentSchema, type RentPaymentSchema } from '@/schemas'
+import { useAuthStore } from '@/store/auth.store'
 import { DollarSign, CheckCircle, Clock, AlertCircle, CalendarCheck } from 'lucide-react'
 
 type RentItem = Record<string, unknown>
@@ -19,9 +20,10 @@ type RentItem = Record<string, unknown>
 type LastPaymentForm = { last_paid_date: string; last_paid_amount: number; notes?: string }
 
 export default function RentPage(): React.ReactElement {
+  const currency = useAuthStore((s) => s.user?.org?.currency ?? 'KES')
   const [statusFilter, setStatusFilter] = useState('')
-  const [recordId,     setRecordId]     = useState<number | null>(null)
-  const [lastPayRow,   setLastPayRow]   = useState<{ leaseId: number; tenantName: string; monthlyRent: number } | null>(null)
+  const [recordId,     setRecordId]     = useState<string | null>(null)
+  const [lastPayRow,   setLastPayRow]   = useState<{ leaseId: string; tenantName: string; monthlyRent: number } | null>(null)
   const { page, perPage, setPage, setPerPage } = usePagination()
   const { toasts, success, error: toastError, dismiss } = useToast()
   const qc = useQueryClient()
@@ -94,7 +96,7 @@ export default function RentPage(): React.ReactElement {
       key: 'total_amount',
       header: 'Amount',
       align: 'right',
-      accessor: (row) => <span className="text-xs font-medium">{formatCurrency(row.total_amount as number)}</span>,
+      accessor: (row) => <span className="text-xs font-medium">{formatCurrency(row.total_amount as number, currency)}</span>,
     },
     {
       key: 'paid_amount',
@@ -106,7 +108,7 @@ export default function RentPage(): React.ReactElement {
         const pct = total > 0 ? (paid / total) * 100 : 0
         return (
           <div className="min-w-[80px]">
-            <p className="text-xs font-medium text-foreground text-right mb-1">{formatCurrency(paid)}</p>
+            <p className="text-xs font-medium text-foreground text-right mb-1">{formatCurrency(paid, currency)}</p>
             <ProgressBar value={pct} color={pct >= 100 ? 'bg-emerald-500' : pct > 0 ? 'bg-amber-500' : 'bg-muted'} />
           </div>
         )
@@ -138,7 +140,7 @@ export default function RentPage(): React.ReactElement {
           <div className="flex items-center gap-1">
             {status !== 'paid' && (
               <button
-                onClick={(e) => { e.stopPropagation(); setRecordId(row.id as number) }}
+                onClick={(e) => { e.stopPropagation(); setRecordId(row.id as string) }}
                 className="rounded px-2 py-1 text-xs text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 font-medium"
               >
                 Record Payment
@@ -146,7 +148,7 @@ export default function RentPage(): React.ReactElement {
             )}
             {lease && (
               <button
-                onClick={(e) => { e.stopPropagation(); setLastPayRow({ leaseId: lease.id as number, tenantName: tenant?.name as string ?? 'Tenant', monthlyRent: row.total_amount as number ?? 0 }) }}
+                onClick={(e) => { e.stopPropagation(); setLastPayRow({ leaseId: lease.id as string, tenantName: tenant?.name as string ?? 'Tenant', monthlyRent: row.total_amount as number ?? 0 }) }}
                 className="rounded px-2 py-1 text-xs text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-950/30 font-medium flex items-center gap-1"
                 title="Record last payment date & amount"
               >
@@ -170,10 +172,10 @@ export default function RentPage(): React.ReactElement {
         />
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-          <StatCard label="Expected" value={sum ? formatCurrency(sum.expected as number) : '—'} icon={<DollarSign className="h-4 w-4 text-violet-600" />} iconBg="bg-violet-100" />
-          <StatCard label="Collected" value={sum ? formatCurrency(sum.collected as number) : '—'} change={sum?.collection_rate ? Math.round(sum.collection_rate as number) : undefined} icon={<CheckCircle className="h-4 w-4 text-emerald-600" />} iconBg="bg-emerald-100" />
-          <StatCard label="Pending" value={sum ? formatCurrency(sum.pending as number) : '—'} icon={<Clock className="h-4 w-4 text-amber-600" />} iconBg="bg-amber-100" />
-          <StatCard label="Overdue" value={sum ? formatCurrency(sum.overdue as number) : '—'} icon={<AlertCircle className="h-4 w-4 text-red-500" />} iconBg="bg-red-100" />
+          <StatCard label="Expected" value={sum ? formatCurrency(sum.expected as number, currency) : '—'} icon={<DollarSign className="h-4 w-4 text-violet-600" />} iconBg="bg-violet-100" />
+          <StatCard label="Collected" value={sum ? formatCurrency(sum.collected as number, currency) : '—'} change={sum?.collection_rate ? Math.round(sum.collection_rate as number) : undefined} icon={<CheckCircle className="h-4 w-4 text-emerald-600" />} iconBg="bg-emerald-100" />
+          <StatCard label="Pending" value={sum ? formatCurrency(sum.pending as number, currency) : '—'} icon={<Clock className="h-4 w-4 text-amber-600" />} iconBg="bg-amber-100" />
+          <StatCard label="Overdue" value={sum ? formatCurrency(sum.overdue as number, currency) : '—'} icon={<AlertCircle className="h-4 w-4 text-red-500" />} iconBg="bg-red-100" />
         </div>
 
         <FilterBar>
@@ -260,7 +262,7 @@ export default function RentPage(): React.ReactElement {
           <FormField label="Last Payment Date" htmlFor="last_paid_date" required>
             <Input id="last_paid_date" type="date" {...lastPayForm.register('last_paid_date', { required: true })} />
           </FormField>
-          <FormField label="Amount Paid" htmlFor="last_paid_amount" hint={`Monthly rent is ${formatCurrency(lastPayRow?.monthlyRent ?? 0)}`} required>
+          <FormField label="Amount Paid" htmlFor="last_paid_amount" hint={`Monthly rent is ${formatCurrency(lastPayRow?.monthlyRent ?? 0, currency)}`} required>
             <Input id="last_paid_amount" type="number" min={0} step="0.01"
               placeholder={String(lastPayRow?.monthlyRent ?? '')}
               {...lastPayForm.register('last_paid_amount', { required: true, valueAsNumber: true })} />

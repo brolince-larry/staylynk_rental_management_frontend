@@ -19,21 +19,24 @@ const RETRY_DELAY  = 1_000  // ms, doubles per attempt
 const IDEMPOTENT_METHODS = new Set<Method>(['get', 'head', 'options', 'put', 'delete'])
 
 // ─── Token / event hooks (set by AuthProvider at boot) ────────────────────
-let _getToken:         (() => string | null) | null = null
-let _onUnauthorized:   (() => void) | null          = null
-let _onSessionTimeout: (() => void) | null          = null
-let _onForbidden:      (() => void) | null          = null
+let _getToken:               (() => string | null) | null = null
+let _onUnauthorized:         (() => void) | null          = null
+let _onSessionTimeout:       (() => void) | null          = null
+let _onForbidden:            (() => void) | null          = null
+let _onSubscriptionRequired: (() => void) | null          = null
 
 export function configureApiClient(opts: {
-  getToken:          () => string | null
-  onUnauthorized:    () => void
-  onSessionTimeout?: () => void
-  onForbidden:       () => void
+  getToken:                () => string | null
+  onUnauthorized:          () => void
+  onSessionTimeout?:       () => void
+  onForbidden:             () => void
+  onSubscriptionRequired?: () => void
 }): void {
-  _getToken         = opts.getToken
-  _onUnauthorized   = opts.onUnauthorized
-  _onSessionTimeout = opts.onSessionTimeout ?? null
-  _onForbidden      = opts.onForbidden
+  _getToken               = opts.getToken
+  _onUnauthorized         = opts.onUnauthorized
+  _onSessionTimeout       = opts.onSessionTimeout ?? null
+  _onForbidden            = opts.onForbidden
+  _onSubscriptionRequired = opts.onSubscriptionRequired ?? null
 }
 
 // ─── Axios instance ───────────────────────────────────────────────────────
@@ -113,6 +116,16 @@ apiClient.interceptors.response.use(
       return Promise.reject(makeError(
         403,
         response?.data?.message ?? 'Access denied.',
+        response?.data?.errors,
+        response?.data?.data ?? response?.data
+      ))
+    }
+
+    if (status === 402) {
+      _onSubscriptionRequired?.()
+      return Promise.reject(makeError(
+        402,
+        response?.data?.message ?? 'Payment required. Please upgrade your plan.',
         response?.data?.errors,
         response?.data?.data ?? response?.data
       ))

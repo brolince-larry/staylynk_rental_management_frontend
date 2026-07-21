@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom'
 import { TrendingUp, TrendingDown, Minus, ArrowRight } from 'lucide-react'
 import { clsx } from 'clsx'
 
+export { PermissionDeniedModal } from './PermissionDeniedModal'
+
 // ─── StatCard ─────────────────────────────────────────────────────────────
 interface StatCardProps {
   label: string
@@ -18,6 +20,10 @@ interface StatCardProps {
   accentBorder?: string
   /** Tailwind bg class for the background glow, e.g. 'bg-violet-500' */
   accentGlow?: string
+  /** Extra classes merged onto the value text, e.g. for state-based color */
+  valueClassName?: string
+  /** 'full' renders the icon badge as a circle instead of the default rounded square */
+  iconShape?: 'square' | 'full'
 }
 
 export function StatCard({
@@ -31,6 +37,8 @@ export function StatCard({
   footer,
   accentBorder,
   accentGlow,
+  valueClassName,
+  iconShape = 'square',
 }: StatCardProps): React.ReactElement {
   const safeValue  = Number.isNaN(value) ? '—' : value
   const safeChange = typeof change === 'number' && Number.isFinite(change) ? change : undefined
@@ -52,7 +60,10 @@ export function StatCard({
 
   return (
     <div className={clsx(
-      'app-card rounded-xl p-5 relative overflow-hidden transition-all duration-200 hover:shadow-md group',
+      // min-w-0 lets this shrink below its content's intrinsic width inside a grid
+      // track — without it, a long currency value forces the card wider than the
+      // column and gets silently clipped by overflow-hidden instead of wrapping/truncating.
+      'app-card rounded-xl p-5 relative overflow-hidden transition-all duration-200 hover:shadow-md group min-w-0',
       accentBorder && `border-l-[3px] ${accentBorder}`,
     )}>
       {/* Decorative glow behind icon */}
@@ -60,16 +71,28 @@ export function StatCard({
         <div className={clsx('pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-[0.09] blur-2xl dark:opacity-[0.14] transition-opacity duration-300 group-hover:opacity-[0.14]', accentGlow)} />
       )}
 
-      {/* Label row */}
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <div className={clsx('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', iconBg)}>
+      {/* Label row — left free to wrap onto a 2nd line; it's short, plain-space text, so it
+          never hits the same unbreakable-string problem as the currency value below. */}
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="min-w-0 text-xs font-medium text-muted-foreground">{label}</p>
+        <div className={clsx(
+          'flex h-8 w-8 shrink-0 items-center justify-center',
+          iconShape === 'full' ? 'rounded-full' : 'rounded-lg',
+          iconBg,
+        )}>
           {icon}
         </div>
       </div>
 
-      {/* Value */}
-      <p className="text-[1.85rem] font-bold tabular-nums tracking-tight text-foreground leading-none">
+      {/* Value — scales down on narrow screens and truncates as a last resort so long
+          currency amounts (e.g. "KES 48,300") never get clipped by the card's overflow-hidden. */}
+      <p
+        className={clsx(
+          'truncate text-xl font-bold tabular-nums tracking-tight text-foreground leading-none sm:text-2xl lg:text-[1.85rem]',
+          valueClassName,
+        )}
+        title={String(safeValue)}
+      >
         {safeValue}
       </p>
 
@@ -106,6 +129,9 @@ export function StatCard({
 const STATUS_STYLES: Record<string, string> = {
   active:       'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-800/50',
   paid:         'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-800/50',
+  completed:    'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-800/50',
+  failed:       'bg-red-50 text-red-700 border-red-200/80 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800/50',
+  reversed:     'bg-slate-100 text-slate-600 border-slate-200/80 dark:bg-slate-800/50 dark:text-slate-400 dark:border-slate-700/50',
   confirmed:    'bg-blue-50 text-blue-700 border-blue-200/80 dark:bg-blue-950/50 dark:text-blue-400 dark:border-blue-800/50',
   checked_in:   'bg-violet-50 text-violet-700 border-violet-200/80 dark:bg-violet-950/50 dark:text-violet-400 dark:border-violet-800/50',
   pending:      'bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/50 dark:text-amber-400 dark:border-amber-800/50',
@@ -211,12 +237,12 @@ export function SectionCard({
   contentClassName,
 }: SectionCardProps): React.ReactElement {
   return (
-    <div className={clsx('app-card overflow-hidden rounded-xl', className)}>
-      <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-muted/30 to-transparent px-5 py-3.5">
-        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-        {action && <div className="text-xs text-muted-foreground">{action}</div>}
+    <div className={clsx('app-card min-w-0 overflow-hidden rounded-xl', className)}>
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-gradient-to-r from-muted/30 to-transparent px-5 py-3.5">
+        <h2 className="min-w-0 truncate text-sm font-semibold text-foreground">{title}</h2>
+        {action && <div className="shrink-0 text-xs text-muted-foreground">{action}</div>}
       </div>
-      <div className={clsx(padding ? 'p-5' : '', contentClassName)}>{children}</div>
+      <div className={clsx('min-w-0', padding ? 'p-5' : '', contentClassName)}>{children}</div>
     </div>
   )
 }
@@ -267,7 +293,7 @@ export function SkeletonTable({ rows = 5, cols = 5 }: { rows?: number; cols?: nu
 
 // ─── PageHeader ───────────────────────────────────────────────────────────
 interface PageHeaderProps {
-  title: string
+  title: ReactNode
   subtitle?: string
   actions?: ReactNode
   /** @deprecated Pass a subtitle instead — emoji in headings reduces the premium feel */

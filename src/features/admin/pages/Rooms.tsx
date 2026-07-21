@@ -15,6 +15,7 @@ import { roomSchema, type RoomSchema } from '@/schemas/property.schema'
 import { HOUSE_TYPE_OPTIONS } from '@/api/listings'
 import { roomsApi } from '@/api/rooms'
 import { formatCurrency } from '@/utils/format'
+import { useAuthStore } from '@/store/auth.store'
 
 type Room = Record<string, unknown>
 type RoomCreateResult = {
@@ -27,6 +28,7 @@ type RoomCreateResult = {
 const ROOM_DEFAULTS: Partial<RoomSchema> = { status: 'available', capacity: 1, number_of_rooms: 1 }
 
 export default function Rooms(): React.ReactElement {
+  const currency = useAuthStore((s) => s.user?.org?.currency ?? 'KES')
   const [search, setSearch]       = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -64,7 +66,7 @@ export default function Rooms(): React.ReactElement {
     if (!editRoom) return
     form.reset({
       house_type: String(editRoom.house_type ?? editRoom.property_type ?? '') as RoomSchema['house_type'],
-      room_number: String(editRoom.room_number ?? editRoom.display_name ?? ''),
+      room_number: String(editRoom.room_number ?? ''),
       number_of_rooms: 1,
       rooms_per_floor: undefined,
       floor: String(editRoom.floor ?? ''),
@@ -194,7 +196,7 @@ export default function Rooms(): React.ReactElement {
         <div className="flex items-center gap-3">
           <SmartImage
             src={getRoomImage(row)}
-            alt={`Room ${String(row.display_name ?? row.room_number ?? '')}`}
+            alt={`Room ${String(row.room_number ?? '')}`}
             usage="card"
             aspectRatio="1 / 1"
             sizes="48px"
@@ -202,7 +204,7 @@ export default function Rooms(): React.ReactElement {
             className="object-cover"
           />
           <div>
-            <p className="text-xs font-semibold text-foreground">{String(row.display_name ?? row.room_number ?? '—')}</p>
+            <p className="text-xs font-semibold text-foreground">{String(row.room_number ?? '—')}</p>
             {(row.block !== undefined || row.floor !== undefined) && (
               <p className="text-xs text-muted-foreground">
                 {row.block ? `Block ${String(row.block)}` : ''}{row.floor ? `, Floor ${String(row.floor)}` : ''}
@@ -228,7 +230,7 @@ export default function Rooms(): React.ReactElement {
     },
     {
       key: 'monthly_rent', header: 'Rent', align: 'right', sortable: true,
-      accessor: (row) => <span className="text-xs font-semibold text-foreground">{formatCurrency(row.monthly_rent as number)}</span>,
+      accessor: (row) => <span className="text-xs font-semibold text-foreground">{formatCurrency(row.monthly_rent as number, currency)}</span>,
     },
     {
       key: 'capacity', header: 'Capacity',
@@ -273,7 +275,17 @@ export default function Rooms(): React.ReactElement {
         <PageHeader
           title="Rooms & Beds"
           subtitle="Manage all rooms across your properties."
-          actions={<Button onClick={() => { form.reset(ROOM_DEFAULTS); setCreateOpen(true) }}><Plus className="h-3.5 w-3.5" /> Add Room</Button>}
+          actions={
+            <Button onClick={() => {
+              form.reset(ROOM_DEFAULTS)
+              setCreateOpen(true)
+              void roomsApi.nextNumber().then((res) => {
+                form.setValue('room_number', res.data.next_room_number)
+              }).catch(() => { /* keep the blank placeholder — not worth failing the modal over */ })
+            }}>
+              <Plus className="h-3.5 w-3.5" /> Add Room
+            </Button>
+          }
         />
         <FilterBar>
           <SearchInput value={search} onChange={setSearch} placeholder="Search room number…" className="w-60" />

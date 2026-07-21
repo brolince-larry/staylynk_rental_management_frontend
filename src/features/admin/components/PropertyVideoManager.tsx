@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, CheckCircle2, Eye, Gauge, GripVertical, Save, Star, Trash2, UploadCloud, Video, X, XCircle } from 'lucide-react'
 import { Button } from '@/components/forms'
+import { useBodyScrollLock } from '@/hooks'
 import {
   deletePropertyVideo,
   getPropertyVideos,
@@ -494,6 +495,8 @@ function AdminVideoFeed({
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([])
   const didScrollToStart = useRef(false)
   const [awaitingSoundPlay, setAwaitingSoundPlay] = useState<Record<string, boolean>>({})
+
+  useBodyScrollLock(true)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

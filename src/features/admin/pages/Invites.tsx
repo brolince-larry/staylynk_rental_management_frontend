@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
 import {
-  BarChart3, Check, ChevronRight, Copy, Download, ExternalLink,
-  Link2, MessageCircle, Plus, RefreshCw, ShieldOff, Trash2,
+  BarChart3, Building2, Calendar, Check, ChevronRight, Copy, Download, ExternalLink,
+  Home, Link2, MessageCircle, Phone, Plus, RefreshCw, ShieldCheck, ShieldOff, Sparkles, Trash2, Users, Wallet,
 } from 'lucide-react'
 import { DataTable, type ColumnDef } from '@/components/tables/DataTable'
-import { Button, ConfirmDialog, FilterBar, FormField, Input, Modal, Select, ToastContainer } from '@/components/forms'
-import { PageHeader, StatCard, StatusBadge } from '@/components/ui'
+import { Button, ConfirmDialog, FilterBar, FormField, Input, Modal, Select, Textarea, ToastContainer } from '@/components/forms'
+import { PageHeader, StatCard, StatusBadge, PermissionDeniedModal } from '@/components/ui'
 import { usePagination, useToast } from '@/hooks'
-import { useProperties } from '../hooks/index'
+import { useProperties, useAdminRecordLastPayment } from '../hooks/index'
 import {
   useAdminInviteAnalytics,
   useAdminInviteExports,
@@ -18,8 +18,9 @@ import {
   useRevokeInvite,
 } from '../layout/hooks/useInvites'
 import { inviteAdminApi, type BulkGenerateResult, type InviteExport, type InviteItem, type InviteListResponse } from '@/api/invites'
-import { formatDate, formatDatetime } from '@/utils/format'
-import { isApiError } from '@/utils/errors'
+import type { RecordLastPaymentResult } from '@/api/leases'
+import { formatDate, formatDatetime, formatCurrency } from '@/utils/format'
+import { extractPermissionDenied, type PermissionDeniedBlock } from '@/utils/errors'
 import { useAuthStore } from '@/store/auth.store'
 
 type Tab = 'invites' | 'exports'
@@ -60,16 +61,44 @@ export default function AdminInvites(): React.ReactElement {
   // Revoke
   const [revokeTarget, setRevokeTarget]     = useState<InviteItem | null>(null)
   const [revokeAllPropId, setRevokeAllPropId] = useState<string | null>(null)
+  const [permissionDenied, setPermissionDenied] = useState<PermissionDeniedBlock | null>(null)
 
   // Copied state
   const [copiedUrl, setCopiedUrl]     = useState<string | null>(null)
   const [waLoading, setWaLoading]     = useState(false)
   const [downloading, setDownloading] = useState<string | null>(null)
 
+  const [contactShareExport, setContactShareExport] = useState<InviteExport | null>(null)
+  const [contactPhones, setContactPhones]           = useState('')
+  const [contactLinks, setContactLinks]             = useState<Record<string, string> | null>(null)
+  const [contactSharing, setContactSharing]         = useState(false)
+  const [contactShareError, setContactShareError]   = useState<string | null>(null)
+
+  const [paymentInvite, setPaymentInvite]   = useState<InviteItem | null>(null)
+  const [paymentResult, setPaymentResult]   = useState<RecordLastPaymentResult | null>(null)
+  const [paidDate, setPaidDate]             = useState(new Date().toISOString().slice(0, 10))
+  const [paidAmount, setPaidAmount]         = useState('')
+  const [paidNotes, setPaidNotes]           = useState('')
+  const { mutate: recordPayment, isPending: recordingPayment } = useAdminRecordLastPayment()
+
+  const closePaymentModal = () => {
+    setPaymentInvite(null)
+    setPaymentResult(null)
+    setPaidDate(new Date().toISOString().slice(0, 10))
+    setPaidAmount('')
+    setPaidNotes('')
+  }
+
   const { toasts, success, error: toastError, dismiss } = useToast()
 
+  const handleLockedError = (err: unknown, fallback: string) => {
+    const block = extractPermissionDenied(err)
+    if (block) { setPermissionDenied(block); return }
+    toastError(err, fallback)
+  }
+
   const { data: propertiesRes } = useProperties()
-  const properties = (propertiesRes?.data ?? []) as { id: number; uuid: string; name: string }[]
+  const properties = (propertiesRes?.data ?? []) as { id: string; name: string }[]
 
   const { data: inviteData, isLoading: invitesLoading } = useAdminInvites({
     property_id: propertyFilter,
@@ -98,7 +127,7 @@ export default function AdminInvites(): React.ReactElement {
           setGenResult(res.data)
           success(`Generated ${res.data.invite_count} invite links`)
         },
-        onError: (err) => toastError(err, 'Failed to generate invites'),
+        onError: (err) => handleLockedError(err, 'Failed to generate invites'),
       }
     )
   }
@@ -127,7 +156,7 @@ export default function AdminInvites(): React.ReactElement {
       const res = await inviteAdminApi.whatsappGroup(exportUuid)
       if (res.data?.link) window.open(res.data.link, '_blank', 'noopener,noreferrer')
     } catch (err) {
-      toastError(err, 'Failed to get WhatsApp link')
+      handleLockedError(err, 'Failed to get WhatsApp link')
     } finally {
       setWaLoading(false)
     }
@@ -140,9 +169,44 @@ export default function AdminInvites(): React.ReactElement {
     try {
       await inviteAdminApi.downloadExport(uuid)
     } catch (err) {
-      toastError(err, 'Failed to download PDF')
+      handleLockedError(err, 'Failed to download PDF')
     } finally {
       setDownloading(null)
+    }
+  }
+
+  const openContactShare = (exp: InviteExport) => {
+    setContactShareExport(exp)
+    setContactPhones('')
+    setContactLinks(null)
+    setContactShareError(null)
+  }
+
+  const closeContactShare = () => {
+    setContactShareExport(null)
+    setContactPhones('')
+    setContactLinks(null)
+    setContactShareError(null)
+  }
+
+  const submitContactShare = async () => {
+    if (!contactShareExport) return
+    const phones = contactPhones
+      .split(/[\n,]/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+    if (phones.length === 0) return
+    setContactSharing(true)
+    setContactShareError(null)
+    try {
+      const res = await inviteAdminApi.whatsappContacts({ export_uuid: contactShareExport.uuid, phones })
+      setContactLinks(res.data?.links ?? {})
+    } catch (err) {
+      const block = extractPermissionDenied(err)
+      if (block) { setPermissionDenied(block); closeContactShare(); return }
+      setContactShareError('Failed to generate WhatsApp links. Check the phone numbers and try again.')
+    } finally {
+      setContactSharing(false)
     }
   }
 
@@ -181,75 +245,48 @@ export default function AdminInvites(): React.ReactElement {
       accessor: (r) => <span className="text-xs text-muted-foreground">{formatDate(r.expires_at)}</span>,
     },
     {
-      key: 'actions', header: '', width: 'w-24',
-      accessor: (r) => r.status === 'pending' ? (
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => { copyUrl(r.registration_url) }}
-            title="Copy link"
-            className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted"
-          >
-            {copiedUrl === r.registration_url ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-          </button>
-          <button
-            onClick={() => setRevokeTarget(r)}
-            title="Revoke"
-            className="flex h-7 w-7 items-center justify-center rounded text-destructive hover:bg-red-50 dark:hover:bg-red-950/30"
-          >
-            <ShieldOff className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      ) : null,
-    },
-  ]
-
-  const exportColumns: ColumnDef<InviteExport>[] = [
-    {
-      key: 'property', header: 'Property',
-      accessor: (r) => <span className="text-xs font-medium text-foreground">{r.property_name ?? `Property #${r.property_id}`}</span>,
-    },
-    {
-      key: 'invite_count', header: 'Invites',
-      accessor: (r) => <span className="text-xs tabular-nums text-muted-foreground">{r.invite_count}</span>,
-    },
-    {
-      key: 'expires_at', header: 'Expires',
-      accessor: (r) => <span className="text-xs text-muted-foreground">{formatDate(r.expires_at)}</span>,
-    },
-    {
-      key: 'created_at', header: 'Created',
-      accessor: (r) => <span className="text-xs text-muted-foreground">{formatDatetime(r.created_at)}</span>,
-    },
-    {
       key: 'actions', header: '', width: 'w-40',
-      accessor: (r) => (
-        <div className="flex items-center justify-end gap-1.5">
-          <button
-            onClick={() => void openWhatsApp(r.uuid)}
-            disabled={waLoading}
-            title="Share via WhatsApp"
-            className="flex h-7 w-7 items-center justify-center rounded bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50"
-          >
-            <MessageCircle className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => void downloadPdf(r.uuid)}
-            disabled={downloading === r.uuid}
-            title="Download PDF"
-            className="flex h-7 w-7 items-center justify-center rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {downloading === r.uuid
-              ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-              : <Download className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-      ),
+      accessor: (r) => {
+        if (r.status === 'pending') {
+          return (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => { copyUrl(r.registration_url) }}
+                title="Copy link"
+                className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted"
+              >
+                {copiedUrl === r.registration_url ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+              </button>
+              <button
+                onClick={() => setRevokeTarget(r)}
+                title="Revoke"
+                className="flex h-7 w-7 items-center justify-center rounded text-destructive hover:bg-red-50 dark:hover:bg-red-950/30"
+              >
+                <ShieldOff className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )
+        }
+        if (r.status === 'used' && r.used_by?.lease_uuid) {
+          return (
+            <button
+              onClick={() => setPaymentInvite(r)}
+              title="Record the tenant's last payment to calculate arrears"
+              className="flex h-7 items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 text-xs font-medium text-primary hover:bg-primary/20"
+            >
+              <Wallet className="h-3.5 w-3.5" />
+              Record Payment
+            </button>
+          )
+        }
+        return null
+      },
     },
   ]
 
   const propertyOptions = [
     { value: '', label: 'All properties' },
-    ...properties.map((p) => ({ value: p.uuid, label: p.name })),
+    ...properties.map((p) => ({ value: p.id, label: p.name })),
   ]
 
   return (
@@ -268,6 +305,19 @@ export default function AdminInvites(): React.ReactElement {
             </Button>
           }
         />
+
+        <div className="mb-5 flex items-start gap-3 rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 px-4 py-3.5 dark:border-emerald-800/40 dark:from-emerald-950/20 dark:to-teal-950/20">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40">
+            <ShieldCheck className="h-4 w-4 text-emerald-600" />
+          </div>
+          <div className="text-xs">
+            <p className="font-semibold text-emerald-900 dark:text-emerald-300">No security deposit for self-onboarding</p>
+            <p className="mt-0.5 text-emerald-800/80 dark:text-emerald-400/80">
+              These links are for tenants already living in the property — they are never charged a deposit when they register themselves.
+              After a tenant self-onboards, open their lease and use <span className="font-medium">Record Payment</span> to capture their last paid month and reveal any arrears.
+            </p>
+          </div>
+        </div>
 
         {/* ── Analytics strip ── */}
         <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -345,15 +395,75 @@ export default function AdminInvites(): React.ReactElement {
 
         {/* ── Exports tab ── */}
         {tab === 'exports' && (
-          <DataTable
-            columns={exportColumns}
-            data={exports}
-            keyField="id"
-            loading={exportsLoading}
-            emptyTitle="No PDF exports"
-            emptyDescription="Generate bulk invites to create a shareable PDF."
-            caption="PDF exports"
-          />
+          exportsLoading ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="h-44 animate-pulse rounded-2xl border border-border bg-muted/40" />
+              ))}
+            </div>
+          ) : exports.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-6 py-16 text-center">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                <Sparkles className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <p className="text-sm font-semibold text-foreground">No PDF exports yet</p>
+              <p className="mt-1 max-w-xs text-xs text-muted-foreground">Generate bulk invites to create a shareable PDF of vacant rooms.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {exports.map((r) => (
+                <div key={r.uuid} className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-shadow hover:shadow-md">
+                  <div className="bg-gradient-to-br from-primary/10 to-violet-500/10 px-4 py-3.5">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="h-4 w-4 shrink-0 text-primary" />
+                      <p className="truncate text-sm font-semibold text-foreground">{r.property_name ?? `Property #${r.property_id}`}</p>
+                    </div>
+                  </div>
+                  <div className="flex-1 space-y-2 px-4 py-3.5">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Home className="h-3.5 w-3.5" />
+                      <span>{r.invite_count} room{r.invite_count === 1 ? '' : 's'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Calendar className="h-3.5 w-3.5" />
+                      <span>Expires {formatDate(r.expires_at)}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground/70">Generated {formatDatetime(r.created_at)}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 border-t border-border px-3 py-2.5">
+                    <button
+                      onClick={() => void openWhatsApp(r.uuid)}
+                      disabled={waLoading}
+                      title="Share to a WhatsApp group"
+                      className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-500 text-xs font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+                    >
+                      <MessageCircle className="h-3.5 w-3.5" />
+                      Group
+                    </button>
+                    <button
+                      onClick={() => openContactShare(r)}
+                      title="Share to individual phone numbers"
+                      className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-emerald-500 text-xs font-medium text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                    >
+                      <Phone className="h-3.5 w-3.5" />
+                      Individual
+                    </button>
+                    <button
+                      onClick={() => void downloadPdf(r.uuid)}
+                      disabled={downloading === r.uuid}
+                      title="Download PDF"
+                      className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {downloading === r.uuid
+                        ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        : <Download className="h-3.5 w-3.5" />}
+                      PDF
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
         )}
       </div>
 
@@ -434,7 +544,7 @@ export default function AdminInvites(): React.ReactElement {
                 onChange={(e) => setGenPropertyId(e.target.value)}
                 options={[
                   { value: '', label: 'Select a property…' },
-                  ...properties.map((p) => ({ value: p.uuid, label: p.name })),
+                  ...properties.map((p) => ({ value: p.id, label: p.name })),
                 ]}
               />
             </FormField>
@@ -466,7 +576,7 @@ export default function AdminInvites(): React.ReactElement {
           if (!revokeTarget) return
           revokeInvite(revokeTarget.id, {
             onSuccess: () => { success('Invite revoked'); setRevokeTarget(null) },
-            onError: (err) => { toastError(err, 'Failed to revoke invite'); setRevokeTarget(null) },
+            onError: (err) => { handleLockedError(err, 'Failed to revoke invite'); setRevokeTarget(null) },
           })
         }}
         onCancel={() => setRevokeTarget(null)}
@@ -483,11 +593,148 @@ export default function AdminInvites(): React.ReactElement {
           if (!revokeAllPropId) return
           revokeAll(revokeAllPropId, {
             onSuccess: () => { success('All pending invites revoked'); setRevokeAllPropId(null) },
-            onError: (err) => { toastError(err, 'Failed to revoke invites'); setRevokeAllPropId(null) },
+            onError: (err) => { handleLockedError(err, 'Failed to revoke invites'); setRevokeAllPropId(null) },
           })
         }}
         onCancel={() => setRevokeAllPropId(null)}
       />
+
+      <Modal
+        open={!!contactShareExport}
+        onClose={closeContactShare}
+        title="Share via WhatsApp"
+        size="sm"
+        footer={
+          contactLinks ? (
+            <Button className="w-full" onClick={closeContactShare}>Done</Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={closeContactShare}>Cancel</Button>
+              <Button loading={contactSharing} disabled={!contactPhones.trim()} onClick={() => void submitContactShare()}>
+                Generate Links
+              </Button>
+            </>
+          )
+        }
+      >
+        {contactLinks ? (
+          <div className="space-y-2">
+            <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+              <Users className="h-3.5 w-3.5" />
+              <span>{Object.keys(contactLinks).length} link{Object.keys(contactLinks).length === 1 ? '' : 's'} ready to send</span>
+            </div>
+            {Object.entries(contactLinks).map(([phone, link]) => (
+              <div key={phone} className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2">
+                <span className="text-xs font-medium text-foreground">{phone}</span>
+                <a
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-500 px-2.5 text-xs font-medium text-white hover:bg-emerald-600"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  Open
+                </a>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Property: <span className="font-medium text-foreground">{contactShareExport?.property_name ?? `#${contactShareExport?.property_id}`}</span>
+            </p>
+            <FormField label="Phone numbers" htmlFor="admin-contact-phones" hint="One per line or comma-separated, e.g. +254712345678">
+              <textarea
+                id="admin-contact-phones"
+                value={contactPhones}
+                onChange={(e) => setContactPhones(e.target.value)}
+                rows={4}
+                placeholder={'+254712345678\n+254798765432'}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+            </FormField>
+            {contactShareError && <p className="text-xs text-destructive">{contactShareError}</p>}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!paymentInvite}
+        onClose={closePaymentModal}
+        title="Record Last Payment"
+        description="This tenant self-onboarded and was not charged a deposit. Enter when and how much they last paid so the system can calculate any arrears."
+        size="sm"
+        footer={
+          paymentResult ? (
+            <Button className="w-full" onClick={closePaymentModal}>Done</Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={closePaymentModal}>Cancel</Button>
+              <Button
+                loading={recordingPayment}
+                disabled={!paidAmount}
+                onClick={() => {
+                  const leaseUuid = paymentInvite?.used_by?.lease_uuid
+                  if (!leaseUuid) return
+                  recordPayment(
+                    { id: leaseUuid, last_paid_date: paidDate, last_paid_amount: Number(paidAmount), notes: paidNotes || undefined },
+                    {
+                      onSuccess: (res) => { setPaymentResult(res.data); success('Last payment recorded') },
+                      onError: (err) => handleLockedError(err, 'Failed to record payment'),
+                    }
+                  )
+                }}
+              >
+                Save
+              </Button>
+            </>
+          )
+        }
+      >
+        {paymentResult ? (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Unpaid months</p>
+              <p className="text-sm font-semibold text-foreground">{paymentResult.unpaid_months}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Total owed</p>
+              <p className="text-sm font-semibold text-foreground">{formatCurrency(paymentResult.total_owed)}</p>
+            </div>
+            {paymentResult.excess_applied > 0 && (
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Overpayment applied to arrears</p>
+                <p className="text-sm font-semibold text-emerald-600">{formatCurrency(paymentResult.excess_applied)}</p>
+              </div>
+            )}
+            <div className={`rounded-lg border p-3 ${paymentResult.arrears_balance > 0 ? 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30' : 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30'}`}>
+              <p className="text-xs text-muted-foreground">Arrears balance</p>
+              <p className={`text-lg font-bold ${paymentResult.arrears_balance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                {formatCurrency(paymentResult.arrears_balance)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {paymentResult.arrears_balance > 0
+                  ? "This is due immediately and shows on the tenant's portal now."
+                  : 'Tenant is fully paid up to date.'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <form className="space-y-4">
+            <FormField label="Last Paid Date" htmlFor="admin-inv-pplast_date" required>
+              <Input id="admin-inv-pplast_date" type="date" max={new Date().toISOString().slice(0, 10)} value={paidDate} onChange={(e) => setPaidDate(e.target.value)} />
+            </FormField>
+            <FormField label="Amount Last Paid" htmlFor="admin-inv-pplast_amount" required>
+              <Input id="admin-inv-pplast_amount" type="number" min={0} step="0.01" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} />
+            </FormField>
+            <FormField label="Notes" htmlFor="admin-inv-ppnotes" hint="Optional">
+              <Textarea id="admin-inv-ppnotes" rows={2} value={paidNotes} onChange={(e) => setPaidNotes(e.target.value)} />
+            </FormField>
+          </form>
+        )}
+      </Modal>
+
+      <PermissionDeniedModal block={permissionDenied} onClose={() => setPermissionDenied(null)} />
     </>
   )
 }

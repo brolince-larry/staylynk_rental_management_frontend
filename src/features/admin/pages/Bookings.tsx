@@ -19,6 +19,7 @@ import { PageHeader, StatusBadge } from '@/components/ui'
 import { formatCurrency, formatDate } from '@/utils/format'
 import { bookingSchema, type BookingSchema, cancelBookingSchema, type CancelBookingSchema } from '@/schemas'
 import type { BookingConfirmResponse, BookingCheckInResponse } from '@/api/bookings'
+import { useAuthStore } from '@/store/auth.store'
 
 type Booking = Record<string, unknown>
 type SourceTab = 'all' | 'admin' | 'public'
@@ -31,6 +32,7 @@ function buildColumns(
   onCancel: (id: number) => void,
   onReject: (id: number) => void,
   onNoShow: (id: number) => void,
+  currency: string,
 ): ColumnDef<Booking>[] {
   return [
     {
@@ -113,7 +115,7 @@ function buildColumns(
       align: 'right',
       accessor: (row) => (
         <span className="text-xs font-medium text-foreground">
-          {formatCurrency(row.amount as number)}
+          {formatCurrency(row.amount as number, currency)}
         </span>
       ),
     },
@@ -204,6 +206,7 @@ function buildColumns(
 
 // ─── Page ─────────────────────────────────────────────────────────────────
 export default function BookingsPage(): React.ReactElement {
+  const currency = useAuthStore((s) => s.user?.org?.currency ?? 'KES')
   const [sourceTab, setSourceTab] = useState<SourceTab>('all')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -341,7 +344,7 @@ export default function BookingsPage(): React.ReactElement {
 
   const hasRejectedPublic = sourceTab === 'public' && rows.some((r) => r.status === 'rejected')
 
-  const columns = buildColumns(handleConfirm, handleCheckIn, handleCheckOut, (id) => setCancelId(id), (id) => setRejectId(id), handleNoShow)
+  const columns = buildColumns(handleConfirm, handleCheckIn, handleCheckOut, (id) => setCancelId(id), (id) => setRejectId(id), handleNoShow, currency)
 
   const summaryCards = [
     { label: 'Total', value: summary?.total ?? meta?.total ?? 0, color: 'text-foreground' },

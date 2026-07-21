@@ -187,6 +187,101 @@ export function RevenueDonut({ data, loading = false, currency = 'USD' }: Revenu
   )
 }
 
+// ─── Profit Overview Donut — yearly P&L: rent minus expenses/salaries = profit
+const PROFIT_DONUT_COLORS = ['#ef4444', '#f59e0b', '#10b981']
+
+interface ProfitSegment {
+  amount: number
+  percent: number
+}
+
+interface ProfitBreakdown {
+  total: number
+  expenses: ProfitSegment
+  salaries: ProfitSegment
+  profit:   ProfitSegment
+  period?: { year: number }
+}
+
+interface ProfitOverviewDonutProps {
+  data: ProfitBreakdown | null
+  loading?: boolean
+  currency?: string
+}
+
+export function ProfitOverviewDonut({ data, loading = false, currency = 'USD' }: ProfitOverviewDonutProps): React.ReactElement {
+  if (loading) {
+    return (
+      <div className="flex items-center gap-4">
+        <div className="h-32 w-32 rounded-full animate-pulse bg-muted shrink-0" />
+        <div className="flex-1 space-y-2">
+          {[1,2,3].map(i => <div key={i} className="h-3 bg-muted rounded animate-pulse" />)}
+        </div>
+      </div>
+    )
+  }
+
+  if (!data) return <div className="text-xs text-muted-foreground py-4 text-center">No data</div>
+
+  const segments = [
+    { name: 'Expenses', value: data.expenses.amount, pct: data.expenses.percent, color: PROFIT_DONUT_COLORS[0] },
+    { name: 'Salaries', value: data.salaries.amount, pct: data.salaries.percent, color: PROFIT_DONUT_COLORS[1] },
+    // A loss can't render as a negative pie slice — clamp only the drawn
+    // value; the legend and label below still show the real (possibly
+    // negative) profit figure.
+    { name: 'Profit',   value: Math.max(0, data.profit.amount), pct: data.profit.percent, color: PROFIT_DONUT_COLORS[2] },
+  ]
+
+  return (
+    <div className="flex items-center gap-4">
+      {/* Donut */}
+      <div className="relative shrink-0" style={{ width: 130, height: 130 }}>
+        <PieChart width={130} height={130}>
+          <Pie
+            data={segments}
+            cx={60}
+            cy={60}
+            innerRadius={44}
+            outerRadius={62}
+            paddingAngle={2}
+            dataKey="value"
+            strokeWidth={0}
+          >
+            {segments.map((s, i) => <Cell key={i} fill={s.color} />)}
+          </Pie>
+        </PieChart>
+        {/* Centre label */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <p className={`text-sm font-bold leading-none ${data.profit.amount < 0 ? 'text-red-500' : 'text-foreground'}`}>
+            {formatCurrency(data.profit.amount, currency)}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">{data.profit.amount < 0 ? 'Loss' : 'Profit'} {data.period?.year ?? ''}</p>
+        </div>
+      </div>
+
+      {/* Legend — label + value stacked per row so long currency strings
+          wrap instead of overflowing this column's fixed width. */}
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="min-w-0 text-xs">
+          <span className="text-muted-foreground">Rent collected</span>
+          <p className="break-words font-medium text-foreground">{formatCurrency(data.total, currency)}</p>
+        </div>
+        {segments.map((s) => (
+          <div key={s.name} className="min-w-0 text-xs">
+            <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+              <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: s.color }} />
+              {s.name}
+            </span>
+            <p className="break-words font-medium text-foreground">
+              {formatCurrency(s.name === 'Profit' ? data.profit.amount : s.value, currency)} ({s.pct}%)
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ─── Revenue Line Chart (SuperAdmin) ─────────────────────────────────────
 interface RevenueTrendPoint {
   period: string

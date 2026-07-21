@@ -11,32 +11,72 @@ import { formatDatetime } from '@/utils/format'
 type Log = Record<string, unknown>
 
 // ── Severity-based badge styles ───────────────────────────────────────────
+// Keyed on the FULL event string first (e.g. "payment_credential.disabled"),
+// falling back to just the part after the last dot (e.g. "deleted") so
+// resource-prefixed events (property.deleted, user.role_changed) still get
+// a sensible label without needing an entry for every resource/action pair.
 const EVENT_BADGE: Record<string, string> = {
-  login_failed:        'border border-red-300 text-red-700 bg-transparent dark:border-red-600 dark:text-red-400',
-  login_rate_limited:  'text-white bg-red-600',
-  login_blocked:       'text-white bg-red-600',
-  login_org_suspended: 'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
-  deleted:             'text-white bg-red-600',
-  updated:             'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
-  role_changed:        'text-violet-700 bg-violet-100 dark:text-violet-300 dark:bg-violet-900/40',
-  sessions_revoked:    'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
-  billing_voided:      'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
-  org_suspended:       'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
-  user_deleted:        'text-white bg-red-600',
+  login_failed:                          'border border-red-300 text-red-700 bg-transparent dark:border-red-600 dark:text-red-400',
+  login_rate_limited:                    'text-white bg-red-600',
+  login_blocked:                         'text-white bg-red-600',
+  login_org_suspended:                   'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
+  deleted:                                'text-white bg-red-600',
+  updated:                                'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
+  role_changed:                          'text-violet-700 bg-violet-100 dark:text-violet-300 dark:bg-violet-900/40',
+  sessions_revoked:                      'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
+  billing_voided:                        'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
+  org_suspended:                         'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
+  user_deleted:                          'text-white bg-red-600',
+  changed:                               'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
+  voided:                                'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
+  recorded:                              'text-emerald-700 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-900/40',
+  create_approved:                       'text-white bg-red-700',
+  update_approved:                       'text-white bg-red-700',
+  disabled:                              'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
+  bank_transfer_approved:                'text-emerald-700 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-900/40',
+  bank_transfer_rejected:                'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
+  org_deleted:                           'text-white bg-red-600',
+  user_impersonated:                     'text-white bg-red-700',
+  org_activated:                         'text-emerald-700 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-900/40',
+  org_ai_limit_updated:                  'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
+  billing_paid:                          'text-emerald-700 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-900/40',
+  user_created:                          'text-violet-700 bg-violet-100 dark:text-violet-300 dark:bg-violet-900/40',
+  user_updated:                          'text-amber-800 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
+  behavior:                              'text-white bg-red-700',
 }
 
 const EVENT_LABELS: Record<string, string> = {
-  login_failed:        'Failed Login',
-  login_rate_limited:  'Rate Limited',
-  login_blocked:       'Account Blocked',
-  login_org_suspended: 'Org Suspended Login',
-  updated:             'Sensitive Field Changed',
-  deleted:             'Record Deleted',
-  role_changed:        'Role Changed',
-  org_suspended:       'Org Suspended',
-  user_deleted:        'User Deleted',
-  sessions_revoked:    'Sessions Revoked',
-  billing_voided:      'Billing Voided',
+  login_failed:            'Failed Login',
+  login_rate_limited:      'Rate Limited',
+  login_blocked:           'Account Blocked',
+  login_org_suspended:     'Org Suspended Login',
+  updated:                 'Sensitive Field Changed',
+  deleted:                 'Record Deleted',
+  role_changed:            'Role Changed',
+  org_suspended:           'Org Suspended',
+  user_deleted:            'User Deleted',
+  sessions_revoked:        'Sessions Revoked',
+  billing_voided:          'Billing Voided',
+  changed:                 'Credential Changed',
+  voided:                  'Voided',
+  recorded:                'Payment Recorded',
+  create_approved:         'Finance Credential Created',
+  update_approved:         'Finance Credential Updated',
+  disabled:                'Finance Credential Disabled',
+  bank_transfer_approved:  'Bank Transfer Approved',
+  bank_transfer_rejected:  'Bank Transfer Rejected',
+  org_deleted:             'Organisation Deleted',
+  user_impersonated:       'User Impersonated',
+  org_activated:           'Organisation Activated',
+  org_ai_limit_updated:    'AI Limit Updated',
+  billing_paid:            'Billing Paid',
+  user_created:            'User Created',
+  user_updated:            'User Updated',
+  behavior:                'Suspicious Behavior Flagged',
+}
+
+function lastSegment(event: string): string {
+  return event.includes('.') ? event.split('.').pop() ?? event : event
 }
 
 // ── Resource diff cell ────────────────────────────────────────────────────
@@ -152,8 +192,9 @@ export default function AuditLogs(): React.ReactElement {
       key: 'event', header: 'Event',
       accessor: (row) => {
         const e      = row.event as string
-        const badge  = EVENT_BADGE[e] ?? 'text-foreground bg-muted'
-        const label  = EVENT_LABELS[e] ?? e.replace(/_/g, ' ')
+        const suffix = lastSegment(e)
+        const badge  = EVENT_BADGE[e] ?? EVENT_BADGE[suffix] ?? 'text-foreground bg-muted'
+        const label  = EVENT_LABELS[e] ?? EVENT_LABELS[suffix] ?? e.replace(/[._]/g, ' ')
         return (
           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${badge}`}>
             {label}

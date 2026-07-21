@@ -1,5 +1,6 @@
 // src/api/payments.ts
-import { apiGet, apiPost, apiPatch, apiDelete } from './client'
+import { apiClient, apiGet, apiPost, apiPatch, apiDelete } from './client'
+import type { ApiResponse } from '@/types'
 import type { PaginatedResponse } from '@/types'
 
 // ─── Filters ─────────────────────────────────────────────────────────────
@@ -177,11 +178,18 @@ export const paymentsApi = {
   tenantBankInfo: () =>
     apiGet<BankInfo>('/tenant/payments/bank-info'),
 
-  tenantBankTransfer: (data: FormData) =>
-    apiPost<{ payment: { id: number; payment_reference: string; status: string } }>(
+  tenantBankTransfer: async (data: FormData, onProgress?: (percent: number) => void) => {
+    const res = await apiClient.post<ApiResponse<{ payment: { id: number; payment_reference: string; status: string } }>>(
       '/tenant/payments/bank-transfer',
-      data as unknown as Record<string, unknown>
-    ),
+      data,
+      {
+        onUploadProgress: (event) => {
+          if (event.total) onProgress?.(Math.round((event.loaded / event.total) * 100))
+        },
+      }
+    )
+    return res.data
+  },
 
   // ── Bank transfer review (admin) ─────────────────────────────────
   adminApproveBankTransfer: (id: string) =>

@@ -14,6 +14,16 @@ declare global {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _echo: Echo<any> | null = null
+let _token: string | null = null
+let initCount = 0
+
+const DEBUG_PREFIX = '[realtime]'
+
+function debug(message: string, data?: Record<string, unknown>): void {
+  if (!import.meta.env.DEV) return
+  if (data) console.debug(DEBUG_PREFIX, message, data)
+  else console.debug(DEBUG_PREFIX, message)
+}
 
 function resolveAppKey(): string | null {
   const raw = import.meta.env.VITE_REVERB_APP_KEY as string | undefined
@@ -26,7 +36,13 @@ function resolveAppKey(): string | null {
 export function getEcho(token: string): Echo<any> | null {
   const appKey = resolveAppKey()
   if (!appKey) return null          // Reverb not configured — silent no-op
-  if (_echo) return _echo
+  if (_echo && _token === token) return _echo
+
+  if (_echo && _token !== token) {
+    debug('token changed; reconnecting Echo')
+    _echo.disconnect()
+    _echo = null
+  }
 
   window.Pusher = Pusher
 
@@ -47,11 +63,22 @@ export function getEcho(token: string): Echo<any> | null {
     authEndpoint: `${apiBaseUrl}/broadcasting/auth`,
     auth: { headers: { Authorization: `Bearer ${token}` } },
   })
+  _token = token
+  initCount += 1
+  debug('Echo initialized', {
+    initCount,
+    authEndpoint: `${apiBaseUrl}/broadcasting/auth`,
+    wsHost: reverbConfig.host,
+    wsPort: tls ? 443 : reverbConfig.port,
+    transport: tls ? 'wss' : 'ws',
+  })
 
   return _echo
 }
 
 export function destroyEcho(): void {
+  if (_echo) debug('Echo disconnect')
   _echo?.disconnect()
   _echo = null
+  _token = null
 }

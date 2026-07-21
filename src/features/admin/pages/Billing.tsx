@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { AlertCircle, BarChart3, Building2, Check, CheckCircle, Clock, CreditCard, Crown, Headphones, Home, Phone, Sparkles, Star, Users } from 'lucide-react'
+import { AlertCircle, BarChart3, Building2, Check, CheckCircle, ChevronLeft, Clock, CreditCard, Crown, Headphones, Home, Lock, Phone, Send, Sparkles, Star, Users } from 'lucide-react'
+import aiOrb from '@/assets/ai-orb.png'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -52,6 +53,62 @@ const WHY_UPGRADE = [
   { icon: Home,      title: 'Better Visibility', text: 'Get featured in public listings and search' },
   { icon: BarChart3, title: 'Advanced Reports', text: 'Make data-driven decisions with analytics' },
   { icon: Headphones, title: 'Priority Support', text: 'Faster support when you need it most' },
+]
+
+// ─── Plan Advisor — conversational question flow ────────────────────────────
+
+interface AdvisorAnswers {
+  tenants: string
+  rooms: string
+  properties: string
+  wantsListing: boolean
+  wantsAI: boolean
+}
+
+const ADVISOR_DEFAULTS: AdvisorAnswers = { tenants: '', rooms: '', properties: '', wantsListing: false, wantsAI: false }
+
+interface AdvisorQuestion {
+  key: keyof AdvisorAnswers
+  type: 'number' | 'bool'
+  ask: string
+  placeholder?: string
+  format: (a: AdvisorAnswers) => string
+}
+
+const ADVISOR_QUESTIONS: AdvisorQuestion[] = [
+  {
+    key: 'tenants',
+    type: 'number',
+    ask: "Hi, I'm your StayLynk Plan Advisor 🤖 — let's find the plan that fits your portfolio best. First: how many tenants are you managing right now?",
+    placeholder: 'e.g. 25',
+    format: (a) => `${Number(a.tenants) || 0} tenant${Number(a.tenants) === 1 ? '' : 's'}`,
+  },
+  {
+    key: 'rooms',
+    type: 'number',
+    ask: 'Got it. And how many rooms or units do you have across your properties?',
+    placeholder: 'e.g. 40',
+    format: (a) => `${Number(a.rooms) || 0} room${Number(a.rooms) === 1 ? '' : 's'}`,
+  },
+  {
+    key: 'properties',
+    type: 'number',
+    ask: 'How many separate properties do you run?',
+    placeholder: 'e.g. 3',
+    format: (a) => `${Number(a.properties) || 0} propert${Number(a.properties) === 1 ? 'y' : 'ies'}`,
+  },
+  {
+    key: 'wantsListing',
+    type: 'bool',
+    ask: 'Would you like your vacancies featured on our public house-hunting marketplace, so renters can find you directly?',
+    format: (a) => a.wantsListing ? 'Yes — list my vacancies publicly' : 'Not right now',
+  },
+  {
+    key: 'wantsAI',
+    type: 'bool',
+    ask: "Last one — want AI-powered tenant matching to help fill vacancies faster?",
+    format: (a) => a.wantsAI ? 'Yes — use AI matching' : 'No thanks',
+  },
 ]
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -126,6 +183,12 @@ export default function AdminBilling(): React.ReactElement {
   const [payInvoice, setPayInvoice]       = useState<AdminBillingInvoice | null>(null)
   const [paymentResult, setPaymentResult] = useState<BillingPaymentResult | null>(null)
 
+  // Plan advisor: conversational question-by-question flow → suggested plan
+  const [advisorOpen, setAdvisorOpen]           = useState(false)
+  const [advisorStep, setAdvisorStep]           = useState(0)
+  const [advisorAnswers, setAdvisorAnswers]     = useState<AdvisorAnswers>(ADVISOR_DEFAULTS)
+  const [advisorSuggestion, setAdvisorSuggestion] = useState<SubscriptionPlan | null>(null)
+
   const { toasts, success, error: toastError, dismiss } = useToast()
   const { data, isLoading, isError, refetch } = useAdminBillingInvoices({ page, per_page: perPage })
   const { data: plans = [], isLoading: plansLoading } = useAdminSubscriptionPlans()
@@ -146,6 +209,13 @@ export default function AdminBilling(): React.ReactElement {
       : null)
   const isOnTrial      = (current?.subscription?.is_trial === true) && ((current?.subscription?.trial_days_remaining ?? 0) > 0)
   const trialDaysLeft  = current?.subscription?.trial_days_remaining ?? 0
+  // Annual billing is only available once actually subscribed (paid) —
+  // trials are always monthly, enforced server-side too.
+  const canUseAnnual   = current?.subscription?.status === 'active'
+
+  useEffect(() => {
+    if (!canUseAnnual && billingCycle === 'annual') setBillingCycle('monthly')
+  }, [canUseAnnual, billingCycle])
 
   const subscribeForm = useForm<SubscribeForm>({
     resolver: zodResolver(subscribeSchema),
@@ -176,6 +246,53 @@ export default function AdminBilling(): React.ReactElement {
   const choosePlan = (plan: SubscriptionPlan) => {
     setSubscribeTarget(plan)
     subscribeForm.reset({ phone_number: '' })
+  }
+
+  const closeAdvisor = () => {
+    setAdvisorOpen(false)
+    setAdvisorSuggestion(null)
+    setAdvisorStep(0)
+    setAdvisorAnswers(ADVISOR_DEFAULTS)
+  }
+
+  const runAdvisorWith = (answers: AdvisorAnswers) => {
+    const needTenants    = Number(answers.tenants) || 0
+    const needRooms      = Number(answers.rooms) || 0
+    const needProperties = Number(answers.properties) || 0
+
+    const fits = (plan: SubscriptionPlan): boolean => {
+      const tenantsLimit    = planLimit(plan, ['tenants'])
+      const roomsLimit      = planLimit(plan, ['rooms', 'units'])
+      const propertiesLimit = planLimit(plan, ['properties'])
+      const caps = plan.capabilities ?? {}
+      if (tenantsLimit >= 0 && needTenants > tenantsLimit) return false
+      if (roomsLimit >= 0 && needRooms > roomsLimit) return false
+      if (propertiesLimit >= 0 && needProperties > propertiesLimit) return false
+      if (answers.wantsListing && !caps.public_listing) return false
+      if (answers.wantsAI && !caps.ai_matching) return false
+      return true
+    }
+
+    const ordered = [...plans].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    const suggested = ordered.find(fits) ?? ordered[ordered.length - 1] ?? null
+    setAdvisorSuggestion(suggested ?? null)
+  }
+
+  // Advance the conversation by one question — `patch` merges in the answer
+  // just given (needed because state set this tick isn't visible to the
+  // `runAdvisorWith` call that fires when the last question is answered).
+  const advisorAdvance = (patch?: Partial<AdvisorAnswers>) => {
+    const next = patch ? { ...advisorAnswers, ...patch } : advisorAnswers
+    if (patch) setAdvisorAnswers(next)
+    if (advisorStep === ADVISOR_QUESTIONS.length - 1) {
+      runAdvisorWith(next)
+    }
+    setAdvisorStep((s) => s + 1)
+  }
+
+  const advisorBack = () => {
+    if (advisorSuggestion) { setAdvisorSuggestion(null); return }
+    setAdvisorStep((s) => Math.max(0, s - 1))
   }
 
   const submitSubscribe = (values: SubscribeForm) => {
@@ -368,23 +485,38 @@ export default function AdminBilling(): React.ReactElement {
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_280px]">
           <div>
             {/* ── Billing cycle toggle ── */}
-            <div className="mb-5 flex justify-center">
+            <div className="mb-2 flex justify-center">
               <div className="inline-flex rounded-full border border-border bg-card p-1 shadow-sm">
-                {(['monthly', 'annual'] as BillingCycle[]).map((cycle) => (
-                  <button
-                    key={cycle}
-                    type="button"
-                    onClick={() => setBillingCycle(cycle)}
-                    className={`rounded-full px-4 py-1.5 text-xs font-semibold capitalize transition-colors ${billingCycle === cycle ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                  >
-                    {cycle}
-                  </button>
-                ))}
+                {(['monthly', 'annual'] as BillingCycle[]).map((cycle) => {
+                  const disabled = cycle === 'annual' && !canUseAnnual
+                  return (
+                    <button
+                      key={cycle}
+                      type="button"
+                      disabled={disabled}
+                      title={disabled ? 'Annual billing unlocks once you have an active paid subscription — trials are always monthly.' : undefined}
+                      onClick={() => !disabled && setBillingCycle(cycle)}
+                      className={`flex items-center gap-1 rounded-full px-4 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                        disabled
+                          ? 'cursor-not-allowed text-muted-foreground/50'
+                          : billingCycle === cycle ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {disabled && <Lock className="h-3 w-3" />}
+                      {cycle}
+                    </button>
+                  )
+                })}
                 <span className="ml-1 rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
                   Save 17%
                 </span>
               </div>
             </div>
+            {!canUseAnnual && (
+              <p className="mb-3 text-center text-[11px] text-muted-foreground">
+                Annual billing unlocks once you're subscribed and paying — trials are always monthly.
+              </p>
+            )}
 
             {/* ── Plan cards ── */}
             {plansLoading ? (
@@ -504,6 +636,33 @@ export default function AdminBilling(): React.ReactElement {
 
           {/* ── Sidebar ── */}
           <aside className="space-y-4">
+            {/* Plan Advisor teaser — AI-powered, front and centre */}
+            <div className="relative overflow-hidden rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 via-fuchsia-50/60 to-indigo-50 p-5 shadow-lg shadow-violet-500/10 dark:border-violet-400/25 dark:from-violet-950/40 dark:via-fuchsia-950/20 dark:to-indigo-950/40">
+              <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 animate-pulse rounded-full bg-fuchsia-400/30 blur-3xl dark:bg-fuchsia-500/20" />
+              <div className="pointer-events-none absolute -bottom-10 -left-10 h-28 w-28 rounded-full bg-violet-400/20 blur-3xl dark:bg-violet-500/20" />
+              <div className="relative flex items-center gap-2.5">
+                <img src={aiOrb} alt="" className="ai-orb-image h-9 w-9 shrink-0" aria-hidden="true" />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-bold text-foreground">Plan Advisor</p>
+                    <span className="rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-white">
+                      AI
+                    </span>
+                  </div>
+                  <p className="text-[0.68rem] text-muted-foreground">Powered by StayLynk AI</p>
+                </div>
+              </div>
+              <p className="relative mt-3 text-xs leading-relaxed text-foreground/80">
+                Not sure which plan fits? Chat with our AI advisor — a few quick questions and we'll match you
+                to the plan that pays for itself.
+              </p>
+              <Button size="sm" className="relative mt-3.5 w-full gap-1.5" onClick={() => setAdvisorOpen(true)}>
+                <Sparkles className="h-3.5 w-3.5" />
+                Ask the Advisor
+              </Button>
+              <p className="relative mt-2 text-center text-[0.65rem] text-muted-foreground">Takes about 30 seconds</p>
+            </div>
+
             <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
               <h2 className="mb-4 text-sm font-semibold text-foreground">Why Upgrade?</h2>
               <div className="space-y-4">
@@ -529,16 +688,6 @@ export default function AdminBilling(): React.ReactElement {
                 <span className="rounded-md bg-red-50 px-3 py-1.5 text-sm font-bold text-red-600 dark:bg-red-950/50 dark:text-red-400">Mastercard</span>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">Instant M-Pesa STK push. No card data stored.</p>
-            </div>
-
-            <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-primary" />
-                <p className="text-xs font-semibold text-foreground">AI Plan Advisor</p>
-              </div>
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                Ask the AI assistant "Compare the plans for me" for a personalised recommendation.
-              </p>
             </div>
           </aside>
         </div>
@@ -730,6 +879,134 @@ export default function AdminBilling(): React.ReactElement {
             </FormField>
           </form>
         )}
+      </Modal>
+
+      {/* ── Plan advisor — conversational AI chat ── */}
+      <Modal
+        open={advisorOpen}
+        onClose={closeAdvisor}
+        title={advisorSuggestion ? 'Your Recommended Plan' : 'Plan Advisor'}
+        size="md"
+        footer={
+          advisorSuggestion ? (
+            <>
+              <Button variant="outline" onClick={advisorBack}>
+                <ChevronLeft className="mr-1 h-3.5 w-3.5" /> Start Over
+              </Button>
+              <Button onClick={() => { closeAdvisor(); choosePlan(advisorSuggestion) }}>
+                {advisorSuggestion.slug === currentPlan?.slug ? 'Already Your Plan' : 'Choose This Plan'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={closeAdvisor}>Cancel</Button>
+              {advisorStep > 0 && (
+                <Button variant="outline" onClick={advisorBack}>
+                  <ChevronLeft className="mr-1 h-3.5 w-3.5" /> Back
+                </Button>
+              )}
+            </>
+          )
+        }
+      >
+        <div className="max-h-[55vh] space-y-3.5 overflow-y-auto pr-1">
+          {ADVISOR_QUESTIONS.slice(0, advisorSuggestion ? ADVISOR_QUESTIONS.length : advisorStep + 1).map((q, i) => {
+            const answered = advisorSuggestion !== null || i < advisorStep
+            return (
+              <React.Fragment key={q.key}>
+                <div className="flex items-start gap-2.5">
+                  <img src={aiOrb} alt="" className="ai-orb-image h-7 w-7 shrink-0" aria-hidden="true" />
+                  <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-violet-100/80 bg-slate-100/90 px-4 py-2.5 text-sm leading-relaxed text-slate-800 shadow-sm dark:border-white/8 dark:bg-white/[0.075] dark:text-slate-100">
+                    {q.ask}
+                  </div>
+                </div>
+                {answered && (
+                  <div className="flex justify-end">
+                    <div className="max-w-[85%] rounded-2xl rounded-br-md bg-violet-600 px-4 py-2.5 text-sm text-white shadow-sm">
+                      {q.format(advisorAnswers)}
+                    </div>
+                  </div>
+                )}
+              </React.Fragment>
+            )
+          })}
+
+          {/* Active control for the question being asked right now */}
+          {!advisorSuggestion && (
+            <div className="pl-9">
+              {ADVISOR_QUESTIONS[advisorStep].type === 'number' ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    autoFocus
+                    placeholder={ADVISOR_QUESTIONS[advisorStep].placeholder}
+                    value={advisorAnswers[ADVISOR_QUESTIONS[advisorStep].key] as string}
+                    onChange={(e) => {
+                      const key = ADVISOR_QUESTIONS[advisorStep].key
+                      setAdvisorAnswers((a) => ({ ...a, [key]: e.target.value }))
+                    }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); advisorAdvance() } }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => advisorAdvance()}
+                    aria-label="Send answer"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white shadow-lg shadow-violet-600/25 transition hover:bg-violet-500"
+                  >
+                    <Send className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={advisorStep === ADVISOR_QUESTIONS.length - 1 && plansLoading}
+                    onClick={() => advisorAdvance({ [ADVISOR_QUESTIONS[advisorStep].key]: true } as Partial<AdvisorAnswers>)}
+                    className="flex-1 rounded-lg border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700 transition hover:bg-violet-100 disabled:opacity-50 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-300 dark:hover:bg-violet-500/20"
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    disabled={advisorStep === ADVISOR_QUESTIONS.length - 1 && plansLoading}
+                    onClick={() => advisorAdvance({ [ADVISOR_QUESTIONS[advisorStep].key]: false } as Partial<AdvisorAnswers>)}
+                    className="flex-1 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-muted-foreground transition hover:bg-muted disabled:opacity-50"
+                  >
+                    Not right now
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Result — persuasive, investment-framed recommendation */}
+          {advisorSuggestion && (
+            <div className="flex items-start gap-2.5">
+              <img src={aiOrb} alt="" className="ai-orb-image h-7 w-7 shrink-0" aria-hidden="true" />
+              <div className="max-w-[92%] space-y-3 rounded-2xl rounded-bl-md border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50 px-4 py-3.5 text-sm leading-relaxed text-slate-800 shadow-sm dark:border-violet-400/25 dark:from-violet-950/40 dark:to-indigo-950/40 dark:text-slate-100">
+                <div className="flex items-center gap-3 rounded-xl border border-violet-200/70 bg-white/70 p-3 dark:border-violet-400/20 dark:bg-black/20">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-md">
+                    {planIcon(advisorSuggestion)}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-foreground">{advisorSuggestion.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatCurrency(num(advisorSuggestion.monthly_price), currency)}/mo
+                    </p>
+                  </div>
+                </div>
+                <p>
+                  Based on what you shared, <strong>{advisorSuggestion.name}</strong> is the smartest fit for where
+                  your portfolio is today. Think of it less as a bill and more as infrastructure — built to pay for
+                  itself the moment it helps you fill one more vacancy, avoid one late payment, or save an hour of
+                  manual work. You're not spending on software — you're investing in a system built to grow with you.
+                </p>
+                <p className="text-xs text-muted-foreground">30-day free trial · Cancel anytime · No card required to switch</p>
+              </div>
+            </div>
+          )}
+        </div>
       </Modal>
     </>
   )

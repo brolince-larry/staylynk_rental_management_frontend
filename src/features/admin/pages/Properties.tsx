@@ -354,7 +354,20 @@ export default function Properties(): React.ReactElement {
               onClick={(e) => {
                 if (isOpen) { setMenuAnchor(null); return }
                 const rect = e.currentTarget.getBoundingClientRect()
-                setMenuAnchor({ id, row, top: rect.bottom + 4, right: window.innerWidth - rect.right })
+                // Flyout beside the row (to the left of the button, level with it) instead
+                // of dropping below — keeps it anchored to the row that was clicked and
+                // clear of whatever sits underneath. Clamped so it never runs off-screen.
+                const MENU_WIDTH = 192
+                const MENU_EST_HEIGHT = 190
+                const right = Math.min(
+                  window.innerWidth - rect.left + 8,
+                  window.innerWidth - MENU_WIDTH - 8,
+                )
+                const top = Math.min(
+                  Math.max(rect.top - 4, 8),
+                  window.innerHeight - MENU_EST_HEIGHT - 8,
+                )
+                setMenuAnchor({ id, row, top, right })
               }}
               className={`inline-flex h-8 w-8 items-center justify-center rounded-md border border-border transition-colors ${isOpen ? 'bg-muted text-foreground' : 'bg-background text-muted-foreground hover:bg-muted hover:text-foreground'}`}
               aria-label={`Actions for ${String(row.name ?? 'property')}`}
@@ -1068,13 +1081,13 @@ function extractMediaItems(row: Property): MediaItem[] {
 
 function getPropertyImage(row: Property): MediaItem | string | null {
   const cover = row.cover_image as MediaItem | undefined
-  if (cover?.optimized_urls?.medium || cover?.optimized_urls?.small || cover?.optimized_urls?.thumbnail) return cover
+  if (cover?.optimized_urls?.medium || cover?.optimized_urls?.small || cover?.optimized_urls?.thumbnail || cover?.optimized_urls?.original) return cover
 
   const media = row.media as Record<string, unknown> | MediaItem[] | undefined
   const firstMedia = Array.isArray(media)
     ? media[0]
     : ((media?.cover as MediaItem | undefined) ?? ((media?.gallery as MediaItem[] | undefined)?.[0]))
-  if (firstMedia?.optimized_urls?.medium || firstMedia?.optimized_urls?.small || firstMedia?.optimized_urls?.thumbnail) return firstMedia
+  if (firstMedia?.optimized_urls?.medium || firstMedia?.optimized_urls?.small || firstMedia?.optimized_urls?.thumbnail || firstMedia?.optimized_urls?.original) return firstMedia
 
   return (row.banner_url as string | undefined) ?? ((row.images as string[] | undefined)?.[0]) ?? null
 }

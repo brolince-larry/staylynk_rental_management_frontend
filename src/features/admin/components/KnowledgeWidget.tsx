@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Brain, Check, X, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { knowledgeApi, type KBQuestion } from '@/api/knowledge'
 import { useAuthStore } from '@/store/auth.store'
-import { getEcho } from '@/lib/echo'
+import { useRealtime } from '@/providers/realtimeContext'
 
 const CATEGORY_COLORS: Record<string, string> = {
   financial:  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
@@ -20,20 +20,32 @@ function categoryColor(cat: string) {
 export function KnowledgeWidget(): React.ReactElement | null {
   const { token, user } = useAuthStore()
   const orgId = user?.org?.id
+  const { subscribePrivate } = useRealtime()
   const [open, setOpen] = useState(false)
+  const [readyToken, setReadyToken] = useState<string | null>(null)
+  const ready = readyToken === token
   const [badge, setBadge] = useState(0)
   const [items, setItems] = useState<KBQuestion[]>([])
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [processing, setProcessing] = useState<Record<string, boolean>>({})
   const ref = useRef<HTMLDivElement>(null)
+  const kbReviewChannel = useMemo(() => (
+    token && orgId ? `ai.kb-review.${String(orgId)}` : null
+  ), [token, orgId])
+
+  useEffect(() => {
+    if (!token) return
+    const timer = window.setTimeout(() => setReadyToken(token), 1_500)
+    return () => window.clearTimeout(timer)
+  }, [token])
 
   // Load stats badge
   useEffect(() => {
-    if (!token) return
+    if (!ready || !token) return
     knowledgeApi.stats()
       .then((r) => setBadge((r.data?.pending ?? 0) + (r.data?.ai_generated ?? 0)))
       .catch(() => {})
-  }, [token])
+  }, [ready, token])
 
   // Load questions when dropdown opens
   useEffect(() => {
@@ -51,17 +63,13 @@ export function KnowledgeWidget(): React.ReactElement | null {
 
   // Reverb real-time push
   useEffect(() => {
-    if (!token || !orgId) return
-    const echo = getEcho(token)
-    if (!echo) return
-    const channel = echo.private(`ai.kb-review.${orgId}`)
-    channel.listen('.ai.question.unanswered', (data: KBQuestion) => {
+    if (!ready || !open || !kbReviewChannel) return
+    return subscribePrivate<KBQuestion>(kbReviewChannel, '.ai.question.unanswered', (data) => {
       setBadge((b) => b + 1)
       setItems((prev) => [data, ...prev].slice(0, 5))
       setAnswers((prev) => ({ [data.uuid]: data.ai_suggested_answer ?? '', ...prev }))
     })
-    return () => { channel.stopListening('.ai.question.unanswered') }
-  }, [token, orgId])
+  }, [ready, open, kbReviewChannel, subscribePrivate])
 
   // Close on outside click
   useEffect(() => {

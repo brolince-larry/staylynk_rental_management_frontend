@@ -32,8 +32,11 @@ const PERMISSION_OPTIONS: Array<{ key: string; label: string }> = [
   { key: 'rooms.delete',           label: 'Delete rooms' },
   { key: 'rooms.beds',             label: 'Manage beds' },
   { key: 'rooms.status',           label: 'Change room status' },
+  { key: 'rooms.invites',          label: 'Generate room invites' },
   { key: 'listings.manage',        label: 'Manage listings' },
-  { key: 'property_videos.manage', label: 'Manage videos' },
+  { key: 'listings.publish',       label: 'Publish / unpublish listing' },
+  { key: 'property_videos.manage', label: 'Manage photos & videos' },
+  { key: 'leases.record_payment',  label: 'Record tenant last payment' },
 ]
 
 const WORKER_JOB_TITLES = [
@@ -108,8 +111,11 @@ function useDeleteOrgUser() {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// New property assignments default to fully permitted — the admin's job is
+// to uncheck what this manager should NOT be allowed to do, not to opt in to
+// every capability one at a time.
 function defaultPerms(): PermFlags {
-  return PERMISSION_OPTIONS.reduce((a, p) => { a[p.key] = false; return a }, {} as PermFlags)
+  return PERMISSION_OPTIONS.reduce((a, p) => { a[p.key] = true; return a }, {} as PermFlags)
 }
 
 function normalisePerms(raw: unknown): PermFlags {

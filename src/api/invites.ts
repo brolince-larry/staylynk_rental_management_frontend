@@ -46,6 +46,7 @@ export interface RegisterPayload {
   password_confirmation: string
   emergency_name?: string
   emergency_phone?: string
+  terms_accepted: boolean
 }
 
 export interface RegisterResult {
@@ -91,6 +92,7 @@ export interface InviteItem {
   used_by?: {
     id: string
     name: string
+    lease_uuid?: string | null
   } | null
 }
 
@@ -184,4 +186,39 @@ export const inviteAdminApi = {
 
   updateBranding: (propertyId: string, data: InviteBranding & { property_name?: string }) =>
     apiPatch(`/admin/properties/${propertyId}/invite-branding`, data),
+}
+
+// ── Manager API ──────────────────────────────────────────────────────────────
+
+export const inviteManagerApi = {
+  bulkGenerate: (data: { property_id: string | number; expiry_days: 7 | 14 | 30 | 60 }) =>
+    apiPost<BulkGenerateResult>('/manager/rooms/invites/bulk', data),
+
+  list: (params?: { property_id?: string | number; status?: string; page?: number; per_page?: number }) =>
+    apiGet<InviteListResponse>('/manager/rooms/invites', params as Record<string, unknown>),
+
+  analytics: (params?: { property_id?: string | number }) =>
+    apiGet<InviteAnalytics>('/manager/rooms/invites/analytics', params as Record<string, unknown>),
+
+  revoke: (uuid: string) =>
+    apiDelete(`/manager/invites/${uuid}`),
+
+  revokeAll: (property_id: string | number) =>
+    apiPost('/manager/invites/revoke-all', { property_id }),
+
+  listExports: () =>
+    apiGet<InviteExport[]>('/manager/invites/exports'),
+
+  downloadExport: async (uuid: string): Promise<void> => {
+    const res = await apiGet<{ url: string; expires_in: number }>(`/manager/invites/exports/${uuid}/download`)
+    if (res.data?.url) {
+      window.open(res.data.url, '_blank', 'noopener,noreferrer')
+    }
+  },
+
+  whatsappGroup: (export_uuid: string) =>
+    apiPost<{ link: string }>('/manager/invites/whatsapp/group', { export_uuid }),
+
+  whatsappContacts: (data: { export_uuid: string; phones: string[] }) =>
+    apiPost<{ links: Record<string, string> }>('/manager/invites/whatsapp/contacts', data),
 }

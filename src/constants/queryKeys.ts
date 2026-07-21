@@ -176,6 +176,8 @@ export const QK = {
     ['superadmin', 'organizations', id] as const,
   saOrgStats: (id: string) =>
     ['superadmin', 'organizations', id, 'stats'] as const,
+  saOrgProperties: (id: string) =>
+    ['superadmin', 'organizations', id, 'properties'] as const,
 
   saPlans: () => ['superadmin', 'plans'] as const,
   saPlanUsage: () => ['superadmin', 'plans', 'usage'] as const,

@@ -78,8 +78,8 @@ export default function TenantPaymentsPage(): React.ReactElement {
       key: 'method',
       header: 'Method',
       accessor: (row) => {
-        const m = row.payment_method as string
-        const info = METHOD_LABELS[m] ?? { label: m, icon: '💰' }
+        const m = row.method as string
+        const info = METHOD_LABELS[m] ?? { label: m ?? '—', icon: '💰' }
         return (
           <div className="flex items-center gap-1.5">
             <span className="text-sm">{info.icon}</span>
@@ -118,7 +118,7 @@ export default function TenantPaymentsPage(): React.ReactElement {
       header: '',
       width: 'w-20',
       accessor: (row) =>
-        row.status === 'completed' ? (
+        row.has_receipt ? (
           <button
             type="button"
             onClick={() => downloadReceipt(row.id as number)}
@@ -133,7 +133,7 @@ export default function TenantPaymentsPage(): React.ReactElement {
 
   // Compute method breakdown from rows
   const methodBreakdown = rows.reduce<Record<string, number>>((acc, row) => {
-    const m = row.payment_method as string
+    const m = row.method as string
     acc[m] = (acc[m] ?? 0) + (row.amount as number)
     return acc
   }, {})

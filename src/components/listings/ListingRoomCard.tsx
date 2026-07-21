@@ -45,7 +45,7 @@ export function ListingRoomCard({ room, listing }: ListingRoomCardProps): React.
             <p className="text-xs capitalize text-muted-foreground">{roomTypeLabel(room.room_type)}</p>
           </div>
           <p className="text-sm font-bold text-foreground">
-            {formatCurrency(Number(room.pricing?.monthly_rent ?? 0))}
+            {formatCurrency(Number(room.pricing?.monthly_rent ?? 0), listing?.currency ?? undefined)}
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">

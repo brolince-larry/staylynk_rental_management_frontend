@@ -25,7 +25,7 @@ export function useSecurityDashboard() {
     queryKey: QK.secDashboard(),
     queryFn: () => securityApi.dashboard(),
     refetchInterval: 60_000,
-    staleTime: 0,
+    staleTime: 55_000,
   })
 }
 
@@ -34,7 +34,7 @@ export function useSecurityEvents(params?: Record<string, unknown>) {
     queryKey: QK.secEvents(params),
     queryFn: () => securityApi.events(params),
     placeholderData: (prev) => prev,
-    staleTime: 0,
+    staleTime: 30_000,
   })
 }
 
@@ -43,7 +43,7 @@ export function useSecurityThreats() {
     queryKey: QK.secThreats(),
     queryFn: () => securityApi.threats(),
     refetchInterval: 30_000,
-    staleTime: 0,
+    staleTime: 25_000,
   })
 }
 
@@ -58,7 +58,7 @@ export function useSecurityBruteForce() {
   return useQuery({
     queryKey: QK.secBruteForce(),
     queryFn: () => securityApi.bruteForce(),
-    staleTime: 0,
+    staleTime: 30_000,
   })
 }
 
@@ -66,7 +66,7 @@ export function useSecurityRiskyUsers() {
   return useQuery({
     queryKey: QK.secRiskyUsers(),
     queryFn: () => securityApi.riskyUsers(),
-    staleTime: 0,
+    staleTime: 30_000,
   })
 }
 
@@ -82,7 +82,7 @@ export function useSecurityBlockedIPs(params?: Record<string, unknown>) {
     queryKey: QK.secBlockedIPs(params),
     queryFn: () => securityApi.blockedIPs(params),
     placeholderData: (prev) => prev,
-    staleTime: 0,
+    staleTime: 30_000,
   })
 }
 

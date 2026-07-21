@@ -3,7 +3,7 @@ import { Helmet } from 'react-helmet-async'
 import { Megaphone, Pin, Globe, Users, ChevronRight, Bell } from 'lucide-react'
 import { PageHeader } from '@/components/ui'
 import { useAuthStore } from '@/store/auth.store'
-import { useTenantAnnouncements, type Announcement } from '@/features/admin/layout/hooks/useAnnouncements'
+import { useTenantAnnouncements, useMarkAnnouncementRead, type Announcement } from '@/features/admin/layout/hooks/useAnnouncements'
 import { formatDatetime } from '@/utils/format'
 
 const STORAGE_KEY = (orgId: string) => `ann_read_${orgId}`
@@ -35,7 +35,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 function AnnouncementCard({ item, isUnread, onRead }: {
   item: Announcement
   isUnread: boolean
-  onRead: (id: number) => void
+  onRead: (item: Announcement) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -45,11 +45,11 @@ function AnnouncementCard({ item, isUnread, onRead }: {
     const el = ref.current
     if (!el) return
     const obs = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) { onRead(item.id); obs.disconnect() }
+      if (entry.isIntersecting) { onRead(item); obs.disconnect() }
     }, { threshold: 0.5 })
     obs.observe(el)
     return () => obs.disconnect()
-  }, [isUnread, item.id, onRead])
+  }, [isUnread, item, onRead])
 
   return (
     <div
@@ -111,16 +111,20 @@ export default function TenantAnnouncementsPage(): React.ReactElement {
 
   // Unread tracking
   const [readIds, setReadIds] = useState<Set<number>>(() => getReadIds(orgId))
+  const { mutate: markAnnouncementRead } = useMarkAnnouncementRead()
 
-  const handleRead = useCallback((id: number) => {
+  const handleRead = useCallback((item: Announcement) => {
     setReadIds((prev) => {
-      if (prev.has(id)) return prev
+      if (prev.has(item.id)) return prev
       const next = new Set(prev)
-      next.add(id)
-      markRead(orgId, [id])
+      next.add(item.id)
+      markRead(orgId, [item.id])
       return next
     })
-  }, [orgId])
+    // Also clear the bell-notification entry server-side — the sidebar/
+    // localStorage tracking above is a separate, client-only mechanism.
+    markAnnouncementRead(item.uuid)
+  }, [orgId, markAnnouncementRead])
 
   // Count unread in current page
   const unreadCount = useMemo(

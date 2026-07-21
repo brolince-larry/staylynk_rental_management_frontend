@@ -12,12 +12,26 @@ import { tenantsApi, type TenantFilters } from '@/api/tenants'
 import { invoicesApi, type InvoiceFilters } from '@/api/invoices'
 import { paymentsApi, type PaymentFilters, type RentFilters } from '@/api/payments'
 import { leasesApi, type LeaseFilters } from '@/api/leases'
+import { bankAccountsApi, type BankAccountInput } from '@/api/bankAccounts'
 
 function useOrgId() { return useAuthStore((s) => s.user?.org?.id?.toString() ?? 'unknown') }
 
 // ══════════════════════════════════════════════════════════════════════════
 // PROPERTIES
 // ══════════════════════════════════════════════════════════════════════════
+// A cover image that's still being resized/compressed only has an `original`
+// URL yet — poll briefly so the list picks up the optimized version (and any
+// other still-processing media) as soon as the background job finishes,
+// instead of requiring a manual page reload.
+const PROPERTY_MEDIA_REFETCH_MS = 4000
+
+function hasProcessingMedia(row: Record<string, unknown>): boolean {
+  const cover = row.cover_image as { status?: string } | null | undefined
+  if (cover?.status && cover.status !== 'ready' && cover.status !== 'failed') return true
+  const media = row.media as Array<{ status?: string }> | undefined
+  return Array.isArray(media) && media.some((m) => m.status && m.status !== 'ready' && m.status !== 'failed')
+}
+
 export function useProperties(filters: PropertyFilters = {}) {
   const orgId = useOrgId()
   return useQuery({
@@ -25,6 +39,10 @@ export function useProperties(filters: PropertyFilters = {}) {
     queryFn: () => propertiesApi.list(filters).then((r) => r.data),
     staleTime: Infinity,
     placeholderData: (prev) => prev,
+    refetchInterval: (query) => {
+      const rows = query.state.data?.data ?? []
+      return rows.some((row) => hasProcessingMedia(row as Record<string, unknown>)) ? PROPERTY_MEDIA_REFETCH_MS : false
+    },
   })
 }
 
@@ -536,6 +554,18 @@ export function useAdminTerminateLease() {
   })
 }
 
+export function useAdminRecordLastPayment() {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string } & Parameters<typeof leasesApi.adminRecordLastPayment>[1]) =>
+      leasesApi.adminRecordLastPayment(id, data),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'leases', orgId] })
+      void qc.invalidateQueries({ queryKey: ['admin', 'dashboard', orgId] })
+    },
+  })
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // SETTINGS
 // ══════════════════════════════════════════════════════════════════════════
@@ -555,20 +585,72 @@ export function useUpdateOrgSettings() {
   const qc = useQueryClient(); const orgId = useOrgId()
   return useMutation({
     mutationFn: (data: Record<string, unknown>) => {
-      const { late_fee_pct, payment_due_day, invoice_prefix, reminder_days, bank_account, ...orgFields } = data
+      const { late_fee_pct, payment_due_day, invoice_prefix, reminder_days, ...orgFields } = data
       const payload: Record<string, unknown> = { ...orgFields }
       const settingsNested: Record<string, unknown> = {}
       if (late_fee_pct    !== undefined) settingsNested.late_fee_pct    = late_fee_pct
       if (payment_due_day !== undefined) settingsNested.payment_due_day = payment_due_day
       if (invoice_prefix  !== undefined) settingsNested.invoice_prefix  = invoice_prefix
       if (reminder_days   !== undefined) settingsNested.reminder_days   = reminder_days
-      if (bank_account    !== undefined) settingsNested.bank_account    = bank_account
       if (Object.keys(settingsNested).length > 0) payload.settings = settingsNested
       return import('@/api/client').then(({ apiPut }) =>
         apiPut<Record<string, unknown>>('/admin/settings', payload)
       )
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.settings(orgId) }),
+  })
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// BANK ACCOUNTS
+// ══════════════════════════════════════════════════════════════════════════
+export function usePropertyOptions() {
+  return useQuery({
+    // Distinct from PropertySwitcher's ['admin'|'manager', 'properties', 'options']
+    // cache key — that query caches the raw wrapped response and unwraps it
+    // separately via optionRows(), so sharing its key would hand this hook
+    // that same wrapped shape instead of the array it returns below.
+    queryKey: ['admin', 'bank-accounts', 'property-options'],
+    queryFn: () => propertiesApi.options().then((r) => {
+      const d = r.data
+      if (Array.isArray(d)) return d
+      const inner = (d as { data?: unknown } | null | undefined)?.data
+      return Array.isArray(inner) ? inner : []
+    }),
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useBankAccounts() {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['admin', 'bank-accounts', orgId],
+    queryFn: () => bankAccountsApi.list().then((r) => r.data.data),
+    staleTime: 60 * 1000,
+  })
+}
+
+export function useCreateBankAccount() {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useMutation({
+    mutationFn: (data: BankAccountInput) => bankAccountsApi.create(data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'bank-accounts', orgId] }),
+  })
+}
+
+export function useUpdateBankAccount() {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<BankAccountInput> }) => bankAccountsApi.update(id, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'bank-accounts', orgId] }),
+  })
+}
+
+export function useDeleteBankAccount() {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useMutation({
+    mutationFn: (id: string) => bankAccountsApi.remove(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'bank-accounts', orgId] }),
   })
 }
 
@@ -592,5 +674,113 @@ export function useRejectBankTransfer() {
       void qc.invalidateQueries({ queryKey: ['admin', 'payments', orgId] })
       void qc.invalidateQueries({ queryKey: ['admin', 'invoices', orgId] })
     },
+  })
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// MESSAGES
+// ══════════════════════════════════════════════════════════════════════════
+
+export function useAdminMessages(params?: { unread?: boolean; per_page?: number; page?: number }) {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['admin', 'messages', orgId, params],
+    queryFn: () =>
+      import('@/api/client').then(({ apiGet }) =>
+        apiGet<Record<string, unknown>>('/admin/messages', params as Record<string, unknown>).then((r) => r.data)
+      ),
+    staleTime: Infinity,
+  })
+}
+
+export interface AdminMessageThread {
+  id: string
+  subject: string | null
+  body: string
+  is_read: boolean
+  sender: { id: string; name: string } | null
+  receiver: { id: string; name: string } | null
+  replies: Array<{ id: string; body: string; sender: { id: string; name: string } | null; created_at: string }>
+  created_at: string
+}
+
+export function useAdminMessageThread(uuid: string | null) {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['admin', 'messages', 'thread', uuid],
+    queryFn: () =>
+      import('@/api/client').then(({ apiGet }) =>
+        apiGet<AdminMessageThread>(`/admin/messages/${uuid}`).then((r) => {
+          void qc.invalidateQueries({ queryKey: ['admin', 'messages', orgId] })
+          return r.data
+        })
+      ),
+    enabled: !!uuid,
+  })
+}
+
+export function useSendAdminMessage() {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useMutation({
+    mutationFn: (data: { receiver_id: string; subject?: string; body: string; parent_id?: string }) =>
+      import('@/api/client').then(({ apiPost }) =>
+        apiPost<Record<string, unknown>>('/admin/messages', data)
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'messages', orgId] }),
+  })
+}
+
+// Sidebar badge count. Nested under the same ['admin','messages',orgId]
+// prefix as the inbox list and thread queries, so it's automatically
+// refreshed by their existing invalidations (sending, opening a thread) —
+// no separate wiring needed for those paths. A per_page=1 request is enough
+// since only `meta.unread_count` is read.
+export function useAdminUnreadMessagesCount() {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['admin', 'messages', orgId, 'unread-badge'],
+    queryFn: () =>
+      import('@/api/client').then(({ apiGet }) =>
+        apiGet<{ meta?: { unread_count?: number } }>('/admin/messages', { per_page: 1 })
+          .then((r) => r.data?.meta?.unread_count ?? 0)
+      ),
+    staleTime: Infinity,
+  })
+}
+
+// Sidebar badge for the Bookings nav item — count of pending hunter booking
+// requests, refreshed live by the realtime subscription in AdminLayout
+// whenever a `new_booking_request` notification arrives (see AdminLayout.tsx).
+export function useAdminPendingBookingsCount() {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['admin', 'bookings', orgId, 'pending-badge'],
+    queryFn: () =>
+      import('@/api/client').then(({ apiGet }) =>
+        // property_id=all — a sidebar badge must count across every property
+        // this admin manages, not just whichever one happens to be selected
+        // in the PropertySwitcher right now.
+        apiGet<{ meta?: { pending_hunter_requests?: number } }>('/admin/bookings', { per_page: 1, source: 'public', status: 'pending', property_id: 'all' })
+          .then((r) => r.data?.meta?.pending_hunter_requests ?? 0)
+      ),
+    staleTime: Infinity,
+  })
+}
+
+export interface AdminMessageRecipient {
+  id: string
+  name: string
+  role: string
+}
+
+export function useAdminMessageRecipients(search = '') {
+  return useQuery({
+    queryKey: ['admin', 'messages', 'recipients', search],
+    queryFn: () =>
+      import('@/api/client').then(({ apiGet }) =>
+        apiGet<{ data: AdminMessageRecipient[] }>('/admin/messages/recipients', { search: search || undefined })
+          .then((r) => r.data?.data ?? [])
+      ),
+    staleTime: 60_000,
   })
 }

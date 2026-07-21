@@ -1,6 +1,6 @@
 // src/features/superadmin/hooks/useOrganizations.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { apiGet, apiPost, apiPatch, apiDelete } from '@/api/client'
+import { apiGet, apiPatch, apiDelete } from '@/api/client'
 import { QK } from '@/constants/queryKeys'
 import type { PaginatedResponse } from '@/types'
 
@@ -34,6 +34,22 @@ export function useOrganization(id: string) {
       apiGet<Record<string, unknown>>(`/superadmin/organizations/${id}`)
         .then(r => r.data),
     enabled: !!id,
+  })
+}
+
+export interface OrgPropertyOption {
+  id: string
+  name: string
+}
+
+export function useOrganizationProperties(id: string) {
+  return useQuery({
+    queryKey: QK.saOrgProperties(id),
+    queryFn:  () =>
+      apiGet<OrgPropertyOption[]>(`/superadmin/organizations/${id}/properties`)
+        .then(r => r.data ?? []),
+    enabled:   !!id,
+    staleTime: 60_000,
   })
 }
 

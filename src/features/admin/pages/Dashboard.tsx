@@ -10,12 +10,18 @@ import {
 import { format, subDays } from 'date-fns'
 import { useAdminDashboard } from '../hooks/useDashboard'
 import { useAuthStore } from '@/store/auth.store'
-import { apiBaseUrl } from '@/config/env'
+import { openSignedDocument } from '@/api/documentDownloads'
+import { useToast } from '@/hooks'
+import { ToastContainer } from '@/components/forms'
 import {
   StatCard, StatusBadge, SectionCard, ProgressBar,
   EmptyState, SkeletonTable, PageHeader, ViewAllLink, ActivityItem,
 } from '@/components/ui'
-import { OccupancyChart, RevenueDonut } from '@/components/charts'
+import { OccupancyChart, ProfitOverviewDonut } from '@/components/charts'
+
+function monthlyOccupancy(points: Array<{ date: string; occupancy_rate: number }>): Array<{ date: string; occupancy_rate: number }> {
+  return points.map((p) => ({ ...p, date: format(new Date(p.date), 'MMM') }))
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 function fmt(n: number, currency = 'USD'): string {
@@ -52,11 +58,18 @@ const ACTIVITY_ICONS: Record<string, { icon: string; bg: string }> = {
 export default function AdminDashboard(): React.ReactElement {
   const user = useAuthStore((s) => s.user)
   const orgCurrency = user?.org?.currency ?? 'USD'
+  const { toasts, success, error: toastError, dismiss } = useToast()
 
   // ── Date range state ──────────────────────────────────────────────────
   const [from, setFrom] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'))
   const [to, setTo] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [showDatePicker, setShowDatePicker] = useState(false)
+
+  const exportRevenueReport = () => {
+    void openSignedDocument('/admin/reports/export?type=revenue', {
+      onPending: (message) => success(message),
+    }).catch((err) => toastError(err, 'Failed to export report'))
+  }
 
   // ── Data fetching ─────────────────────────────────────────────────────
   const { data, isLoading, isError, refetch, isFetching } = useAdminDashboard({ from, to })
@@ -69,6 +82,7 @@ export default function AdminDashboard(): React.ReactElement {
       <Helmet>
         <title>Dashboard — {user?.org?.name ?? 'Admin'} | StayLynk</title>
       </Helmet>
+      <ToastContainer toasts={toasts} dismiss={dismiss} />
 
       <div className="max-w-[1600px] p-4 sm:p-6">
         {/* ── Page header ──────────────────────────────────────────────── */}
@@ -160,15 +174,13 @@ export default function AdminDashboard(): React.ReactElement {
               </button>
 
               {/* Export */}
-              <a
-                href={`${apiBaseUrl}/admin/reports/export?type=revenue`}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                onClick={exportRevenueReport}
                 className="app-gradient-primary flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-violet-500/20 transition-all hover:-translate-y-0.5"
               >
                 <Download className="h-3.5 w-3.5" />
                 Export Report
-              </a>
+              </button>
             </div>
           }
         />
@@ -248,12 +260,12 @@ export default function AdminDashboard(): React.ReactElement {
             title="Occupancy Overview"
             action={
               <span className="rounded-lg border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
-                Last 30 Days
+                {new Date().getFullYear()}
               </span>
             }
           >
             <OccupancyChart
-              data={data?.occupancy_chart ?? []}
+              data={monthlyOccupancy(data?.occupancy_chart ?? [])}
               height={200}
               loading={isLoading}
             />
@@ -264,11 +276,11 @@ export default function AdminDashboard(): React.ReactElement {
             title="Revenue Overview"
             action={
               <span className="rounded-lg border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
-                This Month ▾
+                {data?.revenue_breakdown?.period?.year ?? new Date().getFullYear()}
               </span>
             }
           >
-            <RevenueDonut
+            <ProfitOverviewDonut
               data={data?.revenue_breakdown ?? null}
               loading={isLoading}
               currency={orgCurrency}
@@ -291,7 +303,7 @@ export default function AdminDashboard(): React.ReactElement {
               </div>
             ) : data?.recent_activity.length ? (
               <div className="max-h-[280px] overflow-y-auto -mx-5 px-5">
-                {data.recent_activity.slice(0, 10).map((a) => {
+                {data.recent_activity.slice(0, 5).map((a) => {
                   const iconCfg = ACTIVITY_ICONS[a.event] ?? { icon: '📋', bg: 'bg-slate-100' }
                   return (
                     <ActivityItem

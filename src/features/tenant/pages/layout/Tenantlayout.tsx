@@ -1,4 +1,5 @@
 import React, { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { AppShell, type NavItem } from '@/components/layouts/AppShell'
 import {
   LayoutDashboard, FileText, BedDouble, Receipt, History,
@@ -7,6 +8,9 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth.store'
 import { useTenantAnnouncements } from '@/features/admin/layout/hooks/useAnnouncements'
+import { useTenantUnreadCount } from '../hooks/index'
+import { useRealtime } from '@/providers/realtimeContext'
+import { QK } from '@/constants/queryKeys'
 
 const STORAGE_KEY = (orgId: string) => `ann_read_${orgId}`
 
@@ -38,8 +42,33 @@ function useUnreadAnnouncementCount(): number {
   return useMemo(() => rows.filter((r) => !readIds.has(r.id)).length, [rows, readIds])
 }
 
+// Server-driven unread count — kept fresh from any page via a WebSocket
+// subscription, not just while the Messages page happens to be mounted.
+function useUnreadMessagesCount(): number {
+  const { token, user } = useAuthStore()
+  const orgId  = user?.org?.id?.toString() ?? ''
+  const userId = user?.id?.toString() ?? ''
+  const { data } = useTenantUnreadCount()
+  const qc = useQueryClient()
+  const { subscribePrivate } = useRealtime()
+  const userChannel = useMemo(() => (
+    token && userId ? `users.${userId}` : null
+  ), [token, userId])
+
+  useEffect(() => {
+    if (!userChannel) return
+    const refresh = () => void qc.invalidateQueries({ queryKey: QK.tenantUnreadCount(orgId, userId) })
+    const cleanupSent = subscribePrivate(userChannel, '.message.sent', refresh)
+    const cleanupRead = subscribePrivate(userChannel, '.message.read', refresh)
+    return () => { cleanupSent(); cleanupRead() }
+  }, [userChannel, subscribePrivate, qc, orgId, userId])
+
+  return data?.unread ?? 0
+}
+
 export default function TenantLayout({ children }: { children: ReactNode }): React.ReactElement {
   const unread = useUnreadAnnouncementCount()
+  const unreadMessages = useUnreadMessagesCount()
 
   const nav: NavItem[] = [
     { label: 'Dashboard',            href: '/tenant/dashboard',    icon: LayoutDashboard, section: '' },
@@ -48,13 +77,17 @@ export default function TenantLayout({ children }: { children: ReactNode }): Rea
     { label: 'Bills & Payments',     href: '/tenant/invoices',     icon: Receipt,         section: 'MY ACCOMMODATION' },
     { label: 'Payment History',      href: '/tenant/payments',     icon: History,         section: 'MY ACCOMMODATION' },
     { label: 'Maintenance Requests', href: '/tenant/maintenance',  icon: Wrench,          section: 'MY ACCOMMODATION' },
-    { label: 'Messages',             href: '/tenant/messages',     icon: MessageSquare,   section: 'COMMUNICATION' },
+    {
+      label: 'Messages', href: '/tenant/messages', icon: MessageSquare, section: 'COMMUNICATION',
+      badge: unreadMessages > 0 ? unreadMessages : undefined,
+    },
     {
       label: 'Announcements', href: '/tenant/announcements', icon: Megaphone, section: 'COMMUNICATION',
       badge: unread > 0 ? unread : undefined,
     },
     { label: 'Documents',            href: '/tenant/documents',    icon: FileArchive,     section: 'COMMUNICATION' },
-    { label: 'AI Assistant',         href: '/tenant/ai',           icon: Sparkles,        section: 'ACCOUNT' },
+    // AI Assistant — gradual rollout: admin/superadmin only for now. Restore once AI is enabled for tenants.
+    // { label: 'AI Assistant',      href: '/tenant/ai',           icon: Sparkles,        section: 'ACCOUNT' },
     { label: 'Profile',              href: '/tenant/profile',      icon: User,            section: 'ACCOUNT' },
     { label: 'Help & Support',       href: '/tenant/support',      icon: HelpCircle,      section: 'ACCOUNT' },
   ]

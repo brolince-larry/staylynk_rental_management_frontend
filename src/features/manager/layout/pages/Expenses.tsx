@@ -46,6 +46,7 @@ function expenseErrorMessage(err: unknown): string | unknown {
 }
 
 export default function Expenses(): React.ReactElement {
+  const currency = useAuthStore((s) => s.user?.org?.currency ?? 'KES')
   const currentProperty = useAuthStore((state) => state.user?.current_property)
   const [category, setCategory]   = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -105,7 +106,7 @@ export default function Expenses(): React.ReactElement {
     },
     {
       key: 'amount', header: 'Amount', align: 'right', sortable: true,
-      accessor: (row) => <span className="text-xs font-semibold text-foreground">{formatCurrency(row.amount as number)}</span>,
+      accessor: (row) => <span className="text-xs font-semibold text-foreground">{formatCurrency(row.amount as number, currency)}</span>,
     },
     {
       key: 'expense_date', header: 'Date', sortable: true,
@@ -135,7 +136,7 @@ export default function Expenses(): React.ReactElement {
         {rows.length > 0 && (
           <div className="mb-4 rounded-xl border border-border bg-card px-4 py-3 flex items-center justify-between">
             <p className="text-xs text-muted-foreground">Showing {rows.length} expenses</p>
-            <p className="text-sm font-bold text-foreground">Total: {formatCurrency(total)}</p>
+            <p className="text-sm font-bold text-foreground">Total: {formatCurrency(total, currency)}</p>
           </div>
         )}
 

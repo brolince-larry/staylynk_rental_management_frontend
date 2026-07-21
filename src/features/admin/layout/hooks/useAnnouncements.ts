@@ -101,3 +101,12 @@ export function useTenantAnnouncements(params?: Record<string, unknown>) {
     staleTime: 60_000,
   })
 }
+
+// Clears the bell-notification entry for this announcement server-side, so
+// the unread badge doesn't keep counting it after it's been read here —
+// mirrors the same fix already in place for messages.
+export function useMarkAnnouncementRead() {
+  return useMutation({
+    mutationFn: (uuid: string) => apiPatch(`/tenant/announcements/${uuid}/read`, {}),
+  })
+}

@@ -147,6 +147,9 @@ export const propertiesApi = {
   managerList: (params: PropertyFilters = {}) =>
     apiGet<PaginatedResponse<Record<string, unknown>>>('/manager/properties', params as Record<string, unknown>),
 
+  managerGet: (id: string) =>
+    apiGet<Record<string, unknown>>(`/manager/properties/${id}`),
+
   managerOptions: () =>
     apiGet<PropertyOption[] | PaginatedResponse<PropertyOption>>('/manager/properties/options'),
 

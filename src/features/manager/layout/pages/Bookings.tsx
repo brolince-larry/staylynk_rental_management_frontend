@@ -28,6 +28,7 @@ export default function ManagerBookings(): React.ReactElement {
   const { page, perPage, setPage, setPerPage } = usePagination()
   const debouncedSearch = useDebounce(search, 400)
   const orgId = useAuthStore((s) => s.user?.org?.id?.toString() ?? 'unknown')
+  const currency = useAuthStore((s) => s.user?.org?.currency ?? 'KES')
   const { toasts, success, error: toastError, dismiss } = useToast()
 
   const sourceFilter = sourceTab === 'all' ? undefined : sourceTab
@@ -179,7 +180,7 @@ export default function ManagerBookings(): React.ReactElement {
       header: 'Amount',
       align: 'right',
       sortable: true,
-      accessor: (row) => <span className="text-xs font-semibold">{formatCurrency(row.amount as number)}</span>,
+      accessor: (row) => <span className="text-xs font-semibold">{formatCurrency(row.amount as number, currency)}</span>,
     },
     {
       key: 'status',

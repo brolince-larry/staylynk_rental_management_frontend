@@ -10,6 +10,7 @@ import React, {
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import { Search, X, Loader2 } from 'lucide-react'
+import { useBodyScrollLock } from '@/hooks'
 
 // Shared field surface — works on both white cards (modal) and light/dark mode.
 // --input-surface is white in light mode (pops inside cards) and a solid dark
@@ -252,20 +253,10 @@ export function Modal({
     return () => window.clearTimeout(t)
   }, [open, shouldRender])
 
-  // Lock body scroll to prevent page shift when the modal/drawer is open.
-  // We reserve the scrollbar width as padding-right so the layout doesn't jump when
-  // the scrollbar disappears. We do NOT use position:fixed because it causes the page
-  // to flash blank when a file-picker dialog is opened or closed inside the modal.
-  useEffect(() => {
-    if (!shouldRender) return
-    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
-    document.body.style.overflow = 'hidden'
-    if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`
-    return () => {
-      document.body.style.overflow = ''
-      document.body.style.paddingRight = ''
-    }
-  }, [shouldRender])
+  // Lock body scroll to prevent page shift when the modal/drawer is open (shared
+  // with every other overlay in the app via useBodyScrollLock — same reserved
+  // scrollbar-width trick, no position:fixed so file-picker dialogs don't flash blank).
+  useBodyScrollLock(shouldRender)
 
   if (!shouldRender) return null
 
@@ -306,8 +297,11 @@ export function Modal({
     </div>
   ) : null
 
+  // Portal to document.body so the overlay is always fixed to the real viewport —
+  // never at the mercy of a transformed/animated ancestor (e.g. the page-level
+  // slide-in wrapper) turning "fixed" into "fixed relative to that ancestor" instead.
   if (isDrawer) {
-    return (
+    return createPortal(
       <div
         className="fixed inset-0 z-50"
         role="dialog"
@@ -334,11 +328,12 @@ export function Modal({
           {panelBody}
           {panelFooter}
         </div>
-      </div>
+      </div>,
+      document.body,
     )
   }
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center sm:p-4"
       role="dialog"
@@ -374,7 +369,8 @@ export function Modal({
         {panelBody}
         {panelFooter}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

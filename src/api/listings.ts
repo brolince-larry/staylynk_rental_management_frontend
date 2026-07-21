@@ -118,6 +118,7 @@ export interface PublicListing {
   published_at?: string | null
   last_synced_at?: string | null
   created_at?: string | null
+  property?: { id: number; uuid: string } | null
 }
 
 export interface PublicListingsHome {

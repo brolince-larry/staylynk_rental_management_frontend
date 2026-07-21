@@ -36,6 +36,7 @@ import { openSignedDocument } from '@/api/documentDownloads'
 // ─── Types matching backend response ─────────────────────────────────────
 interface DashboardPaymentHistory {
   id: number
+  uuid: string
   invoice_number: string
   invoice_month: string
   total_amount: number
@@ -55,6 +56,8 @@ interface DashboardNextPayment {
   due_date: string
   days_until_due: number
   status: string
+  is_overdue?: boolean
+  urgency?: 'overdue' | 'due_soon' | 'ok'
 }
 
 interface DashboardPaymentOverview {
@@ -86,8 +89,8 @@ type PaySchema = z.infer<typeof paySchema>
 type Invoice = Record<string, unknown>
 
 // ─── Expandable invoice breakdown ────────────────────────────────────────
-function InvoiceBreakdown({ id }: { id: number }): React.ReactElement {
-  const { data, isLoading } = useTenantInvoice(id)
+function InvoiceBreakdown({ uuid, currency }: { uuid: string; currency: string }): React.ReactElement {
+  const { data, isLoading } = useTenantInvoice(uuid)
   const inv = data as Record<string, unknown> | undefined
 
   if (isLoading) {
@@ -114,7 +117,7 @@ function InvoiceBreakdown({ id }: { id: number }): React.ReactElement {
           <div key={l.label} className="text-xs">
             <span className="text-muted-foreground mr-1.5">{l.label}</span>
             <span className={`font-medium ${l.color ?? 'text-foreground'}`}>
-              {l.amount < 0 ? '-' : ''}{formatCurrency(Math.abs(l.amount))}
+              {l.amount < 0 ? '-' : ''}{formatCurrency(Math.abs(l.amount), currency)}
             </span>
           </div>
         ))}
@@ -128,6 +131,12 @@ function InvoiceBreakdown({ id }: { id: number }): React.ReactElement {
     </div>
   )
 }
+
+// Phone-camera receipt photos routinely run 8-15MB unresized — that's what actually
+// makes the submit "take forever": the upload has to push the whole file over the
+// wire before the server responds. Reject oversized files up front instead of letting
+// the tenant wait through a multi-minute upload on a slow connection.
+const MAX_RECEIPT_BYTES = 10 * 1024 * 1024
 
 // ─── Pay modal ────────────────────────────────────────────────────────────
 interface PayModalProps {
@@ -143,6 +152,7 @@ function BankTransferPanel({ invoice, currency, onClose, onSuccess }: PayModalPr
   const [notes, setNotes]                 = useState('')
   const [copied, setCopied]               = useState<string | null>(null)
   const [submitted, setSubmitted]         = useState(false)
+  const [uploadPct, setUploadPct]         = useState(0)
   const { toasts, toast, error: toastError, dismiss } = useToast()
   const { data: bankInfo, isLoading: loadingBank, isError: bankError } = useTenantBankInfo()
   const { mutate: submitTransfer, isPending: submitting } = useSubmitBankTransfer()
@@ -161,20 +171,22 @@ function BankTransferPanel({ invoice, currency, onClose, onSuccess }: PayModalPr
   }
 
   const handleSubmit = () => {
-    if (!bankReference.trim()) {
-      toast({ type: 'error', title: 'Enter your bank transaction reference.' })
+    if (!receiptFile) {
+      toast({ type: 'error', title: 'Attach your bank transfer receipt.' })
       return
     }
     const fd = new FormData()
     fd.append('invoice_id',    String(invoice.id as number))
     fd.append('amount',        String(amount))
-    fd.append('bank_reference', bankReference.trim())
-    if (receiptFile) fd.append('bank_receipt', receiptFile)
+    if (bankReference.trim()) fd.append('bank_reference', bankReference.trim())
+    fd.append('bank_receipt', receiptFile)
     if (notes.trim()) fd.append('notes', notes.trim())
 
-    submitTransfer(fd, {
+    setUploadPct(0)
+    submitTransfer({ data: fd, onProgress: setUploadPct }, {
       onSuccess: () => setSubmitted(true),
       onError: (err) => {
+        setUploadPct(0)
         const apiErr = err as unknown as ApiError
         if (apiErr.status === 422) {
           toast({ type: 'error', title: 'Bank transfer is not configured for this property. Contact management.' })
@@ -274,17 +286,8 @@ function BankTransferPanel({ invoice, currency, onClose, onSuccess }: PayModalPr
         {/* Reference & receipt */}
         {bankInfo && (
           <>
-            <FormField label="Bank Transaction Reference" htmlFor="bt-ref" hint="Copy from your bank SMS or app" required>
-              <Input
-                id="bt-ref"
-                placeholder="e.g. EQT20250601123456"
-                value={bankReference}
-                onChange={(e) => setBankReference(e.target.value)}
-              />
-            </FormField>
-
             <div>
-              <p className="mb-1 text-xs font-medium text-foreground">Upload Receipt <span className="text-muted-foreground">(optional)</span></p>
+              <p className="mb-1 text-xs font-medium text-foreground">Upload Receipt <span className="text-red-500">*</span></p>
               <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-3 py-3 hover:bg-muted/50 transition-colors">
                 <Paperclip className="h-4 w-4 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">
@@ -294,17 +297,34 @@ function BankTransferPanel({ invoice, currency, onClose, onSuccess }: PayModalPr
                   type="file"
                   className="sr-only"
                   accept="image/*,.pdf"
-                  onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null
+                    if (file && file.size > MAX_RECEIPT_BYTES) {
+                      toast({ type: 'error', title: 'Receipt is too large — please attach a file under 10MB.' })
+                      e.target.value = ''
+                      return
+                    }
+                    setReceiptFile(file)
+                  }}
                 />
               </label>
             </div>
+
+            <FormField label="Bank Transaction Reference" htmlFor="bt-ref" hint="Optional — copy from your bank SMS or app if you have it">
+              <Input
+                id="bt-ref"
+                placeholder="e.g. EQT20250601123456"
+                value={bankReference}
+                onChange={(e) => setBankReference(e.target.value)}
+              />
+            </FormField>
 
             <FormField label="Notes" htmlFor="bt-notes" hint="Optional">
               <Input id="bt-notes" placeholder="Any additional details" value={notes} onChange={(e) => setNotes(e.target.value)} />
             </FormField>
 
             <Button loading={submitting} className="w-full" onClick={handleSubmit}>
-              Submit Bank Transfer
+              {submitting && uploadPct > 0 ? `Uploading receipt… ${uploadPct}%` : 'Submit Bank Transfer'}
             </Button>
           </>
         )}
@@ -496,14 +516,14 @@ export default function TenantInvoicesPage(): React.ReactElement {
   const currency = user?.org?.currency ?? 'USD'
 
   const [statusFilter, setStatusFilter]   = useState('')
-  const [expandedId,   setExpandedId]     = useState<number | null>(null)
+  const [expandedId,   setExpandedId]     = useState<string | null>(null)
   const [payInvoice,   setPayInvoice]     = useState<Invoice | null>(null)
   const [activeTab,    setActiveTab]      = useState<'all' | 'history'>('all')
   const { page, perPage, setPage, setPerPage } = usePagination()
   const { toasts, info, error: toastError, dismiss } = useToast()
 
-  const downloadInvoice = (id: number) => {
-    void openSignedDocument(`/tenant/invoices/${id}/download`, {
+  const downloadInvoice = (uuid: string) => {
+    void openSignedDocument(`/tenant/invoices/${uuid}/download`, {
       onPending: (message) => info(message),
     }).catch((err) => toastError(err, 'Failed to download invoice'))
   }
@@ -533,7 +553,7 @@ export default function TenantInvoicesPage(): React.ReactElement {
     {
       key: 'expand', header: '', width: 'w-8',
       accessor: (row) => {
-        const id = row.id as number
+        const id = row.uuid as string
         const open = expandedId === id
         return (
           <button
@@ -631,7 +651,7 @@ export default function TenantInvoicesPage(): React.ReactElement {
             {status === 'paid' && (
               <button
                 type="button"
-                onClick={() => downloadInvoice(Number(row.id))}
+                onClick={() => downloadInvoice(row.uuid as string)}
                 className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
               >
                 <Download className="h-3 w-3" /> Receipt
@@ -714,27 +734,48 @@ export default function TenantInvoicesPage(): React.ReactElement {
 
         {/* ── Next payment due card ─────────────────────────────────── */}
         {nextDue && (
-          <SectionCard title="Next Payment Due">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-950/50">
-                  <Clock className="h-5 w-5 text-amber-600" />
+          <SectionCard
+            title="Next Payment Due"
+            className={
+              nextDue.urgency === 'overdue' ? 'border-red-200 dark:border-red-900'
+                : nextDue.urgency === 'due_soon' ? 'border-amber-200 dark:border-amber-900'
+                : 'border-emerald-200 dark:border-emerald-900'
+            }
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-4 min-w-0">
+                <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${
+                  nextDue.urgency === 'overdue' ? 'bg-red-100 dark:bg-red-950/50'
+                    : nextDue.urgency === 'due_soon' ? 'bg-amber-100 dark:bg-amber-950/50'
+                    : 'bg-emerald-100 dark:bg-emerald-950/50'
+                }`}>
+                  <Clock className={`h-5 w-5 ${
+                    nextDue.urgency === 'overdue' ? 'text-red-600'
+                      : nextDue.urgency === 'due_soon' ? 'text-amber-600'
+                      : 'text-emerald-600'
+                  }`} />
                 </div>
-                <div>
-                  <p className="text-xl font-bold text-foreground">
+                <div className="min-w-0">
+                  <p className="text-xl font-bold text-foreground truncate">
                     {formatCurrency(nextDue.amount, currency)}
                   </p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground truncate">
                     {nextDue.invoice_number} — due {formatDate(nextDue.due_date)}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <div className="text-right">
-                  <p className={`text-sm font-semibold ${nextDue.days_until_due <= 5 ? 'text-red-500' : nextDue.days_until_due <= 14 ? 'text-amber-600' : 'text-foreground'}`}>
-                    {nextDue.days_until_due > 0
-                      ? `${nextDue.days_until_due} days remaining`
-                      : 'Due today!'}
+                  <p className={`text-sm font-semibold whitespace-nowrap ${
+                    nextDue.urgency === 'overdue' ? 'text-red-500'
+                      : nextDue.urgency === 'due_soon' ? 'text-amber-600'
+                      : 'text-emerald-600'
+                  }`}>
+                    {nextDue.is_overdue
+                      ? `${Math.abs(nextDue.days_until_due)} days overdue`
+                      : nextDue.days_until_due > 0
+                        ? `${nextDue.days_until_due} days remaining`
+                        : 'Due today!'}
                   </p>
                   <StatusBadge status={nextDue.status} />
                 </div>
@@ -809,8 +850,8 @@ export default function TenantInvoicesPage(): React.ReactElement {
               </FilterBar>
 
               {/* Table with expandable rows */}
-              <div className="rounded-xl border border-border overflow-hidden">
-                <table className="w-full border-collapse" aria-label="Invoice list">
+              <div className="rounded-xl border border-border overflow-x-auto">
+                <table className="w-full min-w-[900px] border-collapse" aria-label="Invoice list">
                   <thead>
                     <tr className="border-b border-border bg-muted/40">
                       {columns.map(col => (
@@ -867,7 +908,7 @@ export default function TenantInvoicesPage(): React.ReactElement {
                     )}
 
                     {!isLoading && !isError && rows.map(row => {
-                      const id = row.id as number
+                      const id = row.uuid as string
                       const open = expandedId === id
                       return (
                         <React.Fragment key={id}>
@@ -887,7 +928,7 @@ export default function TenantInvoicesPage(): React.ReactElement {
                           {open && (
                             <tr className="border-b border-border">
                               <td colSpan={columns.length} className="p-0">
-                                <InvoiceBreakdown id={id} />
+                                <InvoiceBreakdown uuid={id} currency={currency} />
                               </td>
                             </tr>
                           )}
@@ -923,8 +964,8 @@ export default function TenantInvoicesPage(): React.ReactElement {
 
           {/* ── Recent payment history tab (from dashboard) ───────── */}
           {activeTab === 'history' && (
-            <div className="rounded-xl border border-border overflow-hidden">
-              <table className="w-full border-collapse" aria-label="Recent payment history">
+            <div className="rounded-xl border border-border overflow-x-auto">
+              <table className="w-full min-w-[900px] border-collapse" aria-label="Recent payment history">
                 <thead>
                   <tr className="border-b border-border bg-muted/40">
                     {['Invoice #', 'Month', 'Amount', 'Rent Component', 'Status', 'Due Date', 'Paid Date', 'Reference', 'Receipt'].map(h => (
@@ -957,7 +998,7 @@ export default function TenantInvoicesPage(): React.ReactElement {
                       </td>
                       <td className="px-4 py-3">
                         {inv.status === 'paid' ? (
-                          <button type="button" onClick={() => downloadInvoice(inv.id)}
+                          <button type="button" onClick={() => downloadInvoice(inv.uuid)}
                             className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
                             <Download className="h-3 w-3" /> PDF
                           </button>

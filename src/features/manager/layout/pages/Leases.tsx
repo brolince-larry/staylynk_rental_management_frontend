@@ -5,28 +5,44 @@ import { Plus, Download, AlertTriangle } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { useManagerLeases, useCreateLease, useTerminateLease, useRenewLease, useLeaseSummary, useLeasesExpiring } from '../hooks/index'
+import { useManagerLeases, useCreateLease, useTerminateLease, useRenewLease, useRecordLastPayment, useLeaseSummary, useLeasesExpiring } from '../hooks/index'
 import { useDebounce, usePagination, useToast } from '@/hooks'
 import { DataTable, type ColumnDef, type SortState } from '@/components/tables/DataTable'
 import { SearchInput, FilterBar, Select, Modal, Button, FormField, Input, Textarea, ToastContainer } from '@/components/forms'
-import { PageHeader, StatusBadge, SectionCard } from '@/components/ui'
+import { PageHeader, StatusBadge, SectionCard, PermissionDeniedModal } from '@/components/ui'
 import { leaseSchema, terminateLeaseSchema, type LeaseSchema, type TerminateLeaseSchema } from '@/schemas/lease.schema'
 import { formatCurrency, formatDate } from '@/utils/format'
 import { openSignedDocument } from '@/api/documentDownloads'
 import { tenantsApi } from '@/api/tenants'
 import { roomsApi } from '@/api/rooms'
+import type { RecordLastPaymentResult } from '@/api/leases'
+import { extractPermissionDenied, type PermissionDeniedBlock } from '@/utils/errors'
+import { useAuthStore } from '@/store/auth.store'
 
 type Lease = Record<string, unknown>
 
 export default function ManagerLeases(): React.ReactElement {
+  const currency = useAuthStore((s) => s.user?.org?.currency ?? 'KES')
   const [search, setSearch]           = useState('')
   const [statusFilter, setStatus]     = useState('active')
   const [createOpen, setCreateOpen]   = useState(false)
   const [terminateId, setTerminateId] = useState<number | null>(null)
+  const [paymentLease, setPaymentLease] = useState<Lease | null>(null)
+  const [paymentResult, setPaymentResult] = useState<RecordLastPaymentResult | null>(null)
+  const [permissionDenied, setPermissionDenied] = useState<PermissionDeniedBlock | null>(null)
+  const [paidDate, setPaidDate]     = useState(new Date().toISOString().slice(0, 10))
+  const [paidAmount, setPaidAmount] = useState('')
+  const [paidNotes, setPaidNotes]   = useState('')
   const [sort, setSort]               = useState<SortState>({ column: 'start_date', direction: 'desc' })
   const { page, perPage, setPage, setPerPage } = usePagination()
   const debouncedSearch = useDebounce(search, 400)
   const { toasts, success, error: toastError, dismiss } = useToast()
+
+  const handleLockedError = (err: unknown, fallback: string) => {
+    const block = extractPermissionDenied(err)
+    if (block) { setPermissionDenied(block); return }
+    toastError(err, fallback)
+  }
 
   const downloadLease = (id: number) => {
     void openSignedDocument(`/manager/leases/${id}/download`, {
@@ -39,6 +55,7 @@ export default function ManagerLeases(): React.ReactElement {
   const { data: expiringData }            = useLeasesExpiring(30)
   const { mutate: createLease, isPending: creating }   = useCreateLease()
   const { mutate: terminate,   isPending: terminating } = useTerminateLease()
+  const { mutate: recordPayment, isPending: recordingPayment } = useRecordLastPayment()
 
   const { data: tenantData } = useQuery({
     queryKey: ['manager', 'tenants', 'options'],
@@ -95,7 +112,7 @@ export default function ManagerLeases(): React.ReactElement {
     },
     {
       key: 'monthly_rent', header: 'Rent', align: 'right', sortable: true,
-      accessor: (row) => <span className="text-xs font-semibold">{formatCurrency(row.monthly_rent as number)}</span>,
+      accessor: (row) => <span className="text-xs font-semibold">{formatCurrency(row.monthly_rent as number, currency)}</span>,
     },
     {
       key: 'end_date', header: 'Expires', sortable: true,
@@ -115,13 +132,28 @@ export default function ManagerLeases(): React.ReactElement {
     },
     { key: 'status', header: 'Status', sortable: true, accessor: (row) => <StatusBadge status={row.status as string} /> },
     {
-      key: 'actions', header: '', width: 'w-28',
+      key: 'actions', header: '', width: 'w-44',
       accessor: (row) => {
         const id = row.id as number
         const s  = row.status as string
         return (
           <div className="flex gap-1 justify-end" onClick={e => e.stopPropagation()}>
             <button type="button" onClick={() => downloadLease(id)} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><Download className="h-3.5 w-3.5" /></button>
+            {s === 'active' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPaidDate(new Date().toISOString().slice(0, 10))
+                  setPaidAmount('')
+                  setPaidNotes('')
+                  setPaymentResult(null)
+                  setPaymentLease(row)
+                }}
+                className="rounded px-2 py-1 text-xs text-primary hover:bg-primary/10"
+              >
+                Record Payment
+              </button>
+            )}
             {s === 'active' && <button onClick={() => setTerminateId(id)} className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30">Terminate</button>}
           </div>
         )
@@ -219,6 +251,84 @@ export default function ManagerLeases(): React.ReactElement {
           </FormField>
         </form>
       </Modal>
+
+      {/* Record last payment — captures arrears for tenants onboarded mid-tenancy */}
+      <Modal
+        open={!!paymentLease}
+        onClose={() => setPaymentLease(null)}
+        title="Record Last Payment"
+        description="For tenants already renting before joining the system — enter when and how much they last paid so the system can calculate any arrears."
+        size="sm"
+        footer={
+          paymentResult ? (
+            <Button className="w-full" onClick={() => setPaymentLease(null)}>Done</Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => setPaymentLease(null)}>Cancel</Button>
+              <Button
+                loading={recordingPayment}
+                disabled={!paidAmount}
+                onClick={() => {
+                  if (!paymentLease) return
+                  recordPayment(
+                    { id: String(paymentLease.id), last_paid_date: paidDate, last_paid_amount: Number(paidAmount), notes: paidNotes || undefined },
+                    {
+                      onSuccess: (res) => { setPaymentResult(res.data); success('Last payment recorded') },
+                      onError: (err) => handleLockedError(err, 'Failed to record payment'),
+                    }
+                  )
+                }}
+              >
+                Save
+              </Button>
+            </>
+          )
+        }
+      >
+        {paymentResult ? (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Unpaid months</p>
+              <p className="text-sm font-semibold text-foreground">{paymentResult.unpaid_months}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Total owed</p>
+              <p className="text-sm font-semibold text-foreground">{formatCurrency(paymentResult.total_owed, currency)}</p>
+            </div>
+            {paymentResult.excess_applied > 0 && (
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Overpayment applied to arrears</p>
+                <p className="text-sm font-semibold text-emerald-600">{formatCurrency(paymentResult.excess_applied, currency)}</p>
+              </div>
+            )}
+            <div className={`rounded-lg border p-3 ${paymentResult.arrears_balance > 0 ? 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30' : 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30'}`}>
+              <p className="text-xs text-muted-foreground">Arrears balance</p>
+              <p className={`text-lg font-bold ${paymentResult.arrears_balance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                {formatCurrency(paymentResult.arrears_balance, currency)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {paymentResult.arrears_balance > 0
+                  ? "This is due immediately and shows on the tenant's portal and dashboard now."
+                  : 'Tenant is fully paid up to date.'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <form className="space-y-4">
+            <FormField label="Last Paid Date" htmlFor="pplast_date" required>
+              <Input id="pplast_date" type="date" max={new Date().toISOString().slice(0, 10)} value={paidDate} onChange={(e) => setPaidDate(e.target.value)} />
+            </FormField>
+            <FormField label="Amount Last Paid" htmlFor="pplast_amount" required>
+              <Input id="pplast_amount" type="number" min={0} step="0.01" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} />
+            </FormField>
+            <FormField label="Notes" htmlFor="ppnotes" hint="Optional">
+              <Textarea id="ppnotes" rows={2} value={paidNotes} onChange={(e) => setPaidNotes(e.target.value)} />
+            </FormField>
+          </form>
+        )}
+      </Modal>
+
+      <PermissionDeniedModal block={permissionDenied} onClose={() => setPermissionDenied(null)} />
     </>
   )
 }

@@ -5,8 +5,54 @@ import { QK } from '@/constants/queryKeys'
 import { leasesApi, type LeaseFilters } from '@/api/leases'
 import { maintenanceApi, type MaintenanceFilters } from '@/api/maintenance'
 import { paymentsApi, type PaymentFilters } from '@/api/payments'
+import { listingsApi, type ListingFilters } from '@/api/listings'
+import { inviteManagerApi, type InviteExport } from '@/api/invites'
 
 function useOrgId() { return useAuthStore((s) => s.user?.org?.id?.toString() ?? 'unknown') }
+
+// ── Public Listings ──────────────────────────────────────────────────────
+export function useManagerListings(params?: ListingFilters) {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['manager', 'listings', orgId, params],
+    queryFn: () => listingsApi.managerList(params).then((r) => r.data),
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function useManagerPublishListing() {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useMutation({
+    mutationFn: ({ propertyId, data }: { propertyId: number | string; data: { title?: string; description?: string; address_display?: string } }) =>
+      listingsApi.managerPublish(propertyId, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['manager', 'listings', orgId] }),
+  })
+}
+
+export function useManagerUnpublishListing() {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useMutation({
+    mutationFn: listingsApi.managerUnpublish,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['manager', 'listings', orgId] }),
+  })
+}
+
+export function useManagerSyncListing() {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useMutation({
+    mutationFn: listingsApi.managerSync,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['manager', 'listings', orgId] }),
+  })
+}
+
+export function useManagerFeatureListing() {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useMutation({
+    mutationFn: ({ uuid, featured, featured_until, boost_score }: { uuid: string; featured: boolean; featured_until?: string; boost_score?: number }) =>
+      listingsApi.managerFeature(uuid, { featured, featured_until, boost_score }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['manager', 'listings', orgId] }),
+  })
+}
 
 // ── Leases ────────────────────────────────────────────────────────────────
 export function useManagerLeases(filters: LeaseFilters = {}) {
@@ -75,6 +121,18 @@ export function useRenewLease() {
     mutationFn: ({ id, ...data }: { id: number } & Parameters<typeof leasesApi.renew>[1]) =>
       leasesApi.renew(id, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['manager', 'leases', orgId] }),
+  })
+}
+
+export function useRecordLastPayment() {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string } & Parameters<typeof leasesApi.recordLastPayment>[1]) =>
+      leasesApi.recordLastPayment(id, data),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['manager', 'leases', orgId] })
+      void qc.invalidateQueries({ queryKey: ['manager', 'dashboard', orgId] })
+    },
   })
 }
 
@@ -149,11 +207,87 @@ export function useManagerMessages(params?: { unread?: boolean; per_page?: numbe
 export function useSendManagerMessage() {
   const qc = useQueryClient(); const orgId = useOrgId()
   return useMutation({
-    mutationFn: (data: { receiver_id: number; subject?: string; body: string }) =>
+    mutationFn: (data: { receiver_id: string; subject?: string; body: string; parent_id?: string }) =>
       import('@/api/client').then(({ apiPost }) =>
         apiPost<Record<string, unknown>>('/manager/messages', data)
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['manager', 'messages', orgId] }),
+  })
+}
+
+// Sidebar badge count. Nested under the same ['manager','messages',orgId]
+// prefix as the inbox list and thread queries, so it's automatically
+// refreshed by their existing invalidations (sending, opening a thread) —
+// no separate wiring needed for those paths. A per_page=1 request is enough
+// since only `meta.unread_count` is read.
+export function useManagerUnreadMessagesCount() {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['manager', 'messages', orgId, 'unread-badge'],
+    queryFn: () =>
+      import('@/api/client').then(({ apiGet }) =>
+        apiGet<{ meta?: { unread_count?: number } }>('/manager/messages', { per_page: 1 })
+          .then((r) => r.data?.meta?.unread_count ?? 0)
+      ),
+    staleTime: Infinity,
+  })
+}
+
+// Sidebar badge for Bookings — count of pending hunter booking requests.
+export function useManagerPendingBookingsCount() {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['manager', 'bookings', orgId, 'pending-badge'],
+    queryFn: () =>
+      import('@/api/client').then(({ apiGet }) =>
+        apiGet<{ meta?: { pending_hunter_requests?: number } }>('/manager/bookings', { per_page: 1, source: 'public', status: 'pending', property_id: 'all' })
+          .then((r) => r.data?.meta?.pending_hunter_requests ?? 0)
+      ),
+    staleTime: Infinity,
+  })
+}
+
+export interface MessageThread {
+  id: string
+  subject: string | null
+  body: string
+  is_read: boolean
+  sender: { id: string; name: string } | null
+  receiver: { id: string; name: string } | null
+  replies: Array<{ id: string; body: string; sender: { id: string; name: string } | null; created_at: string }>
+  created_at: string
+}
+
+export function useManagerMessageThread(uuid: string | null) {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['manager', 'messages', 'thread', uuid],
+    queryFn: () =>
+      import('@/api/client').then(({ apiGet }) =>
+        apiGet<MessageThread>(`/manager/messages/${uuid}`).then((r) => {
+          void qc.invalidateQueries({ queryKey: ['manager', 'messages', orgId] })
+          return r.data
+        })
+      ),
+    enabled: !!uuid,
+  })
+}
+
+export interface MessageRecipient {
+  id: string
+  name: string
+  role: string
+}
+
+export function useMessageRecipients(search = '') {
+  return useQuery({
+    queryKey: ['manager', 'messages', 'recipients', search],
+    queryFn: () =>
+      import('@/api/client').then(({ apiGet }) =>
+        apiGet<{ data: MessageRecipient[] }>('/manager/messages/recipients', { search: search || undefined })
+          .then((r) => r.data?.data ?? [])
+      ),
+    staleTime: 60_000,
   })
 }
 
@@ -291,5 +425,64 @@ export function useManagerCheckOut() {
       void qc.invalidateQueries({ queryKey: ['manager', 'check-in-out', orgId] })
       void qc.invalidateQueries({ queryKey: ['manager', 'dashboard', orgId] })
     },
+  })
+}
+
+// ── Room Invites ──────────────────────────────────────────────────────────
+export function useManagerInvites(params?: { property_id?: string | number; status?: string; page?: number; per_page?: number }) {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['manager', 'invites', orgId, params],
+    queryFn: () => inviteManagerApi.list(params).then((r) => r.data),
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function useManagerInviteAnalytics(params?: { property_id?: string | number }) {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['manager', 'invites', 'analytics', orgId, params],
+    queryFn: () => inviteManagerApi.analytics(params).then((r) => r.data),
+    staleTime: 30_000,
+  })
+}
+
+// The exports endpoint sometimes comes back paginated (`{ data: [...] }`)
+// instead of a bare array — normalise either shape defensively.
+function exportRows(value: unknown): InviteExport[] {
+  if (Array.isArray(value)) return value
+  const data = (value as { data?: unknown } | undefined)?.data
+  return Array.isArray(data) ? (data as InviteExport[]) : []
+}
+
+export function useManagerInviteExports() {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: ['manager', 'invites', 'exports', orgId],
+    queryFn: () => inviteManagerApi.listExports().then((r) => exportRows(r.data)),
+  })
+}
+
+export function useManagerBulkGenerateInvites() {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useMutation({
+    mutationFn: inviteManagerApi.bulkGenerate,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['manager', 'invites', orgId] }),
+  })
+}
+
+export function useManagerRevokeInvite() {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useMutation({
+    mutationFn: (uuid: string) => inviteManagerApi.revoke(uuid),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['manager', 'invites', orgId] }),
+  })
+}
+
+export function useManagerRevokeAllInvites() {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useMutation({
+    mutationFn: (property_id: string | number) => inviteManagerApi.revokeAll(property_id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['manager', 'invites', orgId] }),
   })
 }

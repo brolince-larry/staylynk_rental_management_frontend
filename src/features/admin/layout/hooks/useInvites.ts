@@ -1,7 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { inviteAdminApi } from '@/api/invites'
+import { inviteAdminApi, type InviteExport } from '@/api/invites'
 import { QK } from '@/constants/queryKeys'
 import { useAuthStore } from '@/store/auth.store'
+
+// The exports endpoint sometimes comes back paginated (`{ data: [...] }`)
+// instead of a bare array — normalise either shape defensively.
+function exportRows(value: unknown): InviteExport[] {
+  if (Array.isArray(value)) return value
+  const data = (value as { data?: unknown } | undefined)?.data
+  return Array.isArray(data) ? (data as InviteExport[]) : []
+}
 
 function useOrgId() {
   return useAuthStore((s) => s.user?.org?.id?.toString() ?? 'unknown')
@@ -29,7 +37,7 @@ export function useAdminInviteExports() {
   const orgId = useOrgId()
   return useQuery({
     queryKey: QK.adminInviteExports(orgId),
-    queryFn: () => inviteAdminApi.listExports().then((r) => r.data),
+    queryFn: () => inviteAdminApi.listExports().then((r) => exportRows(r.data)),
   })
 }
 

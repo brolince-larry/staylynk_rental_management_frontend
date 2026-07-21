@@ -2,7 +2,7 @@
 import React, { useState } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { useOrganizations, useSuspendOrganization, useActivateOrganization } from '../hooks/useOrganizations'
-import { useDebounce, usePagination, useToast } from '@/hooks'
+import { useBodyScrollLock, useDebounce, usePagination, useToast } from '@/hooks'
 import { DataTable, type ColumnDef } from '@/components/tables/DataTable'
 import { SearchInput, FilterBar, Select, Button, ConfirmDialog, ToastContainer } from '@/components/forms'
 import { PageHeader, StatusBadge } from '@/components/ui'
@@ -53,10 +53,12 @@ function AILimitDialog({
     return (sub?.ai_requests_per_day as number | undefined) ?? null
   })()
 
+  useBodyScrollLock(true)
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="relative w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl"
+        className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button onClick={onClose} className="absolute right-4 top-4 rounded-full p-1 text-muted-foreground hover:bg-muted">

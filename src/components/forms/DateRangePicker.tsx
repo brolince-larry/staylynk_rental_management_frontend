@@ -4,18 +4,19 @@
 
 import React from 'react'
 import { clsx } from 'clsx'
-import { subDays, format } from 'date-fns'
+import { subDays, startOfYear, format } from 'date-fns'
 
 interface Preset {
   label: string
-  days:  number
+  range: () => [Date, Date]
 }
 
 const DEFAULT_PRESETS: Preset[] = [
-  { label: 'Last 7 days',  days: 7   },
-  { label: 'Last 30 days', days: 30  },
-  { label: 'Last 90 days', days: 90  },
-  { label: 'This year',    days: 365 },
+  { label: 'Last 7 days',  range: () => [subDays(new Date(), 7), new Date()] },
+  { label: 'Last 30 days', range: () => [subDays(new Date(), 30), new Date()] },
+  { label: 'Last 90 days', range: () => [subDays(new Date(), 90), new Date()] },
+  // Calendar year to date (Jan 1 → today), not a rolling 365-day window.
+  { label: 'This year',    range: () => [startOfYear(new Date()), new Date()] },
 ]
 
 interface DateRangePickerProps {
@@ -37,11 +38,10 @@ export function DateRangePicker({
   presets = DEFAULT_PRESETS,
   showPresets = true,
 }: DateRangePickerProps): React.ReactElement {
-  const applyPreset = (days: number) => {
-    const today    = new Date()
-    const fromDate = subDays(today, days)
+  const applyPreset = (preset: Preset) => {
+    const [fromDate, toDate] = preset.range()
     onFromChange(format(fromDate, 'yyyy-MM-dd'))
-    onToChange(format(today, 'yyyy-MM-dd'))
+    onToChange(format(toDate, 'yyyy-MM-dd'))
   }
 
   return (
@@ -51,7 +51,7 @@ export function DateRangePicker({
         <button
           key={p.label}
           type="button"
-          onClick={() => applyPreset(p.days)}
+          onClick={() => applyPreset(p)}
           className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
         >
           {p.label}

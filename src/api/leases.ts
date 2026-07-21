@@ -45,6 +45,21 @@ export interface RenewPayload {
   payment_due_day?:  number
 }
 
+export interface RecordLastPaymentPayload {
+  last_paid_date:   string
+  last_paid_amount: number
+  notes?:           string
+}
+
+export interface RecordLastPaymentResult {
+  last_paid_date:   string
+  last_paid_amount: number
+  arrears_balance:  number
+  unpaid_months:    number
+  total_owed:       number
+  excess_applied:   number
+}
+
 function stripPropertyId<T extends { property_id?: unknown }>(data: T): Record<string, unknown> {
   const {
     property_id: _propertyId,
@@ -87,13 +102,16 @@ export const leasesApi = {
     apiGet<Record<string, unknown>>(`/admin/leases/${id}`),
 
   adminTerminate: (id: string, data: TerminatePayload) =>
-    apiPatch<Record<string, unknown>>(
+    apiPost<Record<string, unknown>>(
       `/admin/leases/${id}/terminate`,
       data
     ),
 
   adminDownload: (id: string) =>
     apiGet<{ url?: string; expires_in?: string }>(`/admin/leases/${id}/download`),
+
+  adminRecordLastPayment: (id: string, data: RecordLastPaymentPayload) =>
+    apiPatch<RecordLastPaymentResult>(`/admin/rent/leases/${id}/record-payment`, data),
 
   // ── Manager ──────────────────────────────────────────────────────
   list: (params: LeaseFilters = {}) =>
@@ -109,7 +127,7 @@ export const leasesApi = {
     apiPost<Record<string, unknown>>('/manager/leases', stripPropertyId(data)),
 
   terminate: (id: string, data: TerminatePayload) =>
-    apiPatch<Record<string, unknown>>(
+    apiPost<Record<string, unknown>>(
       `/manager/leases/${id}/terminate`,
       data
     ),
@@ -122,6 +140,9 @@ export const leasesApi = {
 
   download: (id: string) =>
     apiGet<{ url?: string; expires_in?: string }>(`/manager/leases/${id}/download`),
+
+  recordLastPayment: (id: string, data: RecordLastPaymentPayload) =>
+    apiPatch<RecordLastPaymentResult>(`/manager/rent/leases/${id}/record-payment`, data),
 
   expiring: (days?: number) =>
     apiGet<ExpiringLeasesResult>(

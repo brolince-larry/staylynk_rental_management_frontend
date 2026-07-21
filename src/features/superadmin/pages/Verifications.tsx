@@ -4,7 +4,7 @@ import { CheckCircle, Eye, FileCheck, FileText, Loader2, X, XCircle } from 'luci
 import { DataTable, type ColumnDef } from '@/components/tables/DataTable'
 import { Button, FilterBar, FormField, Modal, Select, Textarea, ToastContainer } from '@/components/forms'
 import { PageHeader, StatusBadge, StatCard } from '@/components/ui'
-import { usePagination, useToast } from '@/hooks'
+import { useBodyScrollLock, usePagination, useToast } from '@/hooks'
 import { formatDate } from '@/utils/format'
 import type { VerificationReviewItem } from '@/api/verification'
 import {
@@ -26,6 +26,8 @@ function isImage(mimeType: string): boolean {
 
 function DocumentViewerOverlay({ doc, onClose }: { doc: DocViewer; onClose: () => void }): React.ReactElement {
   const [loaded, setLoaded] = useState(false)
+
+  useBodyScrollLock(true)
 
   return (
     <div

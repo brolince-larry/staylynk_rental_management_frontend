@@ -17,6 +17,7 @@ import { AuthGuard, RouteRoleGuard, GuestGuard } from '@/auth/guards'
 import { normalizeDashboardPath } from '@/auth/routeAccess'
 import { PageLoader } from '@/components/feedback/PageLoader'
 import { AuthProvider } from '@/providers/AuthProvider'
+import { RealtimeProvider } from '@/providers/RealtimeProvider'
 import { publicSiteUrl } from '@/config/env'
 import { useAuthStore } from '@/store/auth.store'
 
@@ -26,8 +27,10 @@ function S({ children }: { children: React.ReactNode }) {
 }
 
 // ─── Auth ──────────────────────────────────────────────────────────────────
-const LoginPage    = lazy(() => import('@/api/pages/LoginPage'))
-const RegisterPage = lazy(() => import('@/api/pages/RegisterPage'))
+const LoginPage          = lazy(() => import('@/api/pages/LoginPage'))
+const RegisterPage       = lazy(() => import('@/api/pages/RegisterPage'))
+const ForgotPasswordPage = lazy(() => import('@/api/pages/ForgotPasswordPage'))
+const ResetPasswordPage  = lazy(() => import('@/api/pages/ResetPasswordPage'))
 const NotFoundPage = lazy(() => import('@/api/pages/NotFoundPage'))
 const PlaceholderPage = lazy(() => import('@/features/shared/pages/PlaceholderPage'))
 const ProfilePage = lazy(() => import('@/features/shared/pages/Profile'))
@@ -73,12 +76,17 @@ const AdminExpenses     = lazy(() => import('@/features/admin/pages/Expenses'))
 const AdminVerification  = lazy(() => import('@/features/admin/pages/Verification'))
 const AdminInvites       = lazy(() => import('@/features/admin/pages/Invites'))
 const AdminAnnouncements = lazy(() => import('@/features/admin/pages/Announcements'))
+const AdminMessages      = lazy(() => import('@/features/admin/pages/Messages'))
 const AIPage             = lazy(() => import('@/features/shared/pages/AIPage'))
 const InviteRegisterPage = lazy(() => import('@/features/public/pages/InviteRegister'))
+const TermsPage          = lazy(() => import('@/features/public/pages/Terms'))
+const PrivacyPolicyPage  = lazy(() => import('@/features/public/pages/PrivacyPolicy'))
 
 // ─── Manager pages ────────────────────────────────────────────────────────
 const ManagerDashboard  = lazy(() => import('@/features/manager/layout/pages/Dashboard'))
 const ManagerProperties = lazy(() => import('@/features/manager/layout/pages/Properties'))
+const ManagerListings   = lazy(() => import('@/features/manager/layout/pages/Listings'))
+const ManagerInvites    = lazy(() => import('@/features/manager/layout/pages/Invites'))
 const ManagerRooms      = lazy(() => import('@/features/manager/layout/pages/Rooms'))
 const ManagerBookings   = lazy(() => import('@/features/manager/layout/pages/Bookings'))
 const ManagerTenants    = lazy(() => import('@/features/manager/layout/pages/Tenants'))
@@ -169,6 +177,14 @@ const routes = [
     element: <GuestGuard><S><RegisterPage /></S></GuestGuard>,
   },
   {
+    path: '/forgot-password',
+    element: <GuestGuard><S><ForgotPasswordPage /></S></GuestGuard>,
+  },
+  {
+    path: '/reset-password',
+    element: <GuestGuard><S><ResetPasswordPage /></S></GuestGuard>,
+  },
+  {
     path: '/house-hunting',
     element: <ExternalRedirect to={`${publicSiteUrl}/hunter`} />,
   },
@@ -179,6 +195,14 @@ const routes = [
   {
     path: '/invite/:token',
     element: <S><InviteRegisterPage /></S>,
+  },
+  {
+    path: '/terms',
+    element: <S><TermsPage /></S>,
+  },
+  {
+    path: '/privacy',
+    element: <S><PrivacyPolicyPage /></S>,
   },
 
   // SuperAdmin
@@ -243,6 +267,7 @@ const routes = [
       { path: 'verification',   element: <S><AdminVerification /></S> },
             { path: 'invites',        element: <S><AdminInvites /></S> },
       { path: 'announcements',  element: <S><AdminAnnouncements role="admin" /></S> },
+      { path: 'messages',       element: <S><AdminMessages /></S> },
       { path: 'profile',        element: <S><ProfilePage /></S> },
       { path: 'ai',             element: <S><AIPage /></S> },
     ],
@@ -262,6 +287,8 @@ const routes = [
       { index: true,           element: <Navigate to="dashboard" replace /> },
       { path: 'dashboard',     element: <S><ManagerDashboard /></S> },
       { path: 'properties',    element: <S><ManagerProperties /></S> },
+      { path: 'listings',      element: <S><ManagerListings /></S> },
+      { path: 'invites',       element: <S><ManagerInvites /></S> },
       { path: 'rooms',         element: <S><ManagerRooms /></S> },
       { path: 'bookings',      element: <S><ManagerBookings /></S> },
       { path: 'tenants',       element: <S><ManagerTenants /></S> },
@@ -273,7 +300,8 @@ const routes = [
       { path: 'messages',       element: <S><ManagerMessages /></S> },
       { path: 'announcements',  element: <S><ManagerAnnouncements /></S> },
       { path: 'profile',        element: <S><ProfilePage /></S> },
-      { path: 'ai',             element: <S><AIPage /></S> },
+      // AI Assistant — gradual rollout: admin/superadmin only for now. Restore once AI is enabled for managers.
+      // { path: 'ai',          element: <S><AIPage /></S> },
     ],
   },
 
@@ -300,7 +328,8 @@ const routes = [
       { path: 'announcements',  element: <S><TenantAnnouncements /></S> },
       { path: 'profile',        element: <S><ProfilePage /></S> },
       { path: 'support',     element: <S><TenantSupport /></S> },
-      { path: 'ai',          element: <S><AIPage /></S> },
+      // AI Assistant — gradual rollout: admin/superadmin only for now. Restore once AI is enabled for tenants.
+      // { path: 'ai',       element: <S><AIPage /></S> },
     ],
   },
 
@@ -312,7 +341,9 @@ const router = createBrowserRouter([
   {
     element: (
       <AuthProvider>
-        <Outlet />
+        <RealtimeProvider>
+          <Outlet />
+        </RealtimeProvider>
       </AuthProvider>
     ),
     errorElement: <RouteErrorFallback />,

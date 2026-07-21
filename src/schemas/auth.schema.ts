@@ -7,6 +7,20 @@ export const loginSchema = z.object({
 })
 export type LoginSchema = z.infer<typeof loginSchema>
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().min(1, 'Email is required').email('Invalid email address'),
+})
+export type ForgotPasswordSchema = z.infer<typeof forgotPasswordSchema>
+
+export const resetPasswordSchema = z.object({
+  password:              z.string().min(8, 'At least 8 characters'),
+  password_confirmation: z.string(),
+}).refine(d => d.password === d.password_confirmation, {
+  message: 'Passwords do not match',
+  path:    ['password_confirmation'],
+})
+export type ResetPasswordSchema = z.infer<typeof resetPasswordSchema>
+
 export const registerSchema = z.object({
   org_name:              z.string().min(2, 'Organisation name is required').max(150),
   org_email:             z.string().email('Invalid organisation email'),
@@ -16,9 +30,13 @@ export const registerSchema = z.object({
   password:              z.string().min(8, 'At least 8 characters'),
   password_confirmation: z.string(),
   country:               z.string().length(2).optional(),
+  terms_accepted:        z.boolean(),
 }).refine(d => d.password === d.password_confirmation, {
   message: 'Passwords do not match',
   path:    ['password_confirmation'],
+}).refine(d => d.terms_accepted === true, {
+  message: 'You must accept the Terms of Service and Privacy Policy to continue',
+  path:    ['terms_accepted'],
 })
 export type RegisterSchema = z.infer<typeof registerSchema>
 

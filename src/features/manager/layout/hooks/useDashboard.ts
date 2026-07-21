@@ -5,33 +5,48 @@ import { useAuthStore } from '@/store/auth.store'
 
 interface ManagerStats {
   total_properties: number
+  new_properties_month: number
   total_rooms: number
+  new_rooms_month: number
   occupied_rooms: number
   occupancy_rate: number
   monthly_revenue: number
+  revenue_change_pct: number
   pending_payments: number
 }
 
 interface RevenueSegment {
-  label: string
   amount: number
   percent: number
 }
 
 interface ManagerDashboardData {
   stats: ManagerStats
-  occupancy_chart: Array<{ date: string; occupancy_rate: number }>
-  revenue_breakdown: {
+  occupancy_overview: Array<{ date: string; occupancy_rate: number }>
+  revenue_overview: {
     total: number
-    room_rent: RevenueSegment
-    late_fees: RevenueSegment
-    utilities: RevenueSegment
-    other_fees: RevenueSegment
+    expenses: RevenueSegment
+    salaries: RevenueSegment
+    profit: RevenueSegment
+    period?: { year: number }
   }
-  rent_collection?: {
+  recent_activities: Array<{
+    id: number | string
+    event: string
+    model: string
+    model_id: number | string | null
+    actor: string
+    created_at: string
+  }>
+  rent_collection_summary: {
+    expected: number
     collected: number
     pending: number
     overdue: number
+    collection_rate: number
+    collected_change_pct: number
+    pending_change_pct: number
+    overdue_change_pct: number
   }
   property_status: Array<{
     id: number | string
@@ -42,10 +57,11 @@ interface ManagerDashboardData {
   }>
   recent_bookings: Array<{
     id: number | string
-    tenant_name: string
-    room_number: string
-    check_in_date: string
-    check_out_date?: string | null
+    booking_number: string
+    guest_name: string
+    room: string
+    check_in: string
+    check_out?: string | null
     amount: number
     status: string
   }>

@@ -1,5 +1,5 @@
 // src/components/layouts/AppShell.tsx
-import React, { useMemo, type ReactNode } from 'react'
+import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AIReminderToast } from '@/components/ai/AIReminderToast'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
@@ -69,6 +69,20 @@ export function AppShell({
   const user   = useAuthStore((s) => s.user)
   const logout = useLogout()
   const location = useLocation()
+  const mainRef = useRef<HTMLElement | null>(null)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+
+  // Reset scroll to top on navigation. <main> used to be forced through a full
+  // unmount/remount via a `key={pathname+search}` prop to get this for free, but
+  // destroying and rebuilding the whole page subtree on every single navigation is
+  // expensive and — worse — races with anything doing async DOM work on the outgoing
+  // page (an in-flight modal-close animation, a chart's ResizeObserver callback, a
+  // portal teardown), which is what was producing "Failed to execute 'removeChild'"
+  // errors. Scrolling the persistent node back to top gets the same UX without ever
+  // tearing down children that are still mid-animation.
+  useEffect(() => {
+    mainRef.current?.scrollTo(0, 0)
+  }, [location.pathname, location.search])
 
   const darkSidebar = IS_DARK_SIDEBAR(role)
 
@@ -85,12 +99,25 @@ export function AppShell({
   const orgLogo     = (orgRecord?.logo_image ?? orgRecord?.media) as Record<string, unknown> | undefined
   const orgLogoUrl  = orgRecord?.logo_url as string | undefined
 
+  // ── Sidebar footer image card — property cover for manager/tenant, org
+  // branding image for admin. Superadmin has no single property/org context.
+  const currentPropertyRecord = user?.current_property as
+    (Record<string, unknown> & { city?: string | null; country?: string | null }) | null | undefined
+  const propertyCover     = currentPropertyRecord?.cover_image as Record<string, unknown> | null | undefined
+  const propertyBannerUrl = currentPropertyRecord?.banner_url as string | null | undefined
+  const propertyImageSrc  = propertyCover ?? propertyBannerUrl ?? undefined
+  const propertyLocation  = [currentPropertyRecord?.city, currentPropertyRecord?.country].filter(Boolean).join(', ')
+
+  const showPropertyCard = (role === 'manager' || role === 'tenant') && !!propertyImageSrc
+  const showOrgCard      = role === 'admin' && !!(orgLogo || orgLogoUrl)
+
   const avatarNode = userMedia || userAvatar ? (
     <SmartImage
       src={userMedia ?? userAvatar}
       fallback={userAvatar}
       alt={`${userName} profile photo`}
       usage="card"
+      priority
       aspectRatio="1 / 1"
       sizes="28px"
       wrapperClassName="h-full w-full rounded-full"
@@ -171,6 +198,7 @@ export function AppShell({
                 fallback={orgLogoUrl}
                 alt={`${logoLabel} logo`}
                 usage="card"
+                priority
                 aspectRatio="1 / 1"
                 sizes="30px"
                 wrapperClassName="h-8 w-8 rounded-lg"
@@ -256,6 +284,33 @@ export function AppShell({
 
         {/* Footer */}
         <div className={['shrink-0 space-y-1 border-t p-2.5', sidebar.divider].join(' ')}>
+          {/* Property / organization image card */}
+          {!sidebarCollapsed && (showPropertyCard || showOrgCard) && (
+            <div className="relative mb-2 h-24 w-full overflow-hidden rounded-lg">
+              <SmartImage
+                src={showPropertyCard ? propertyImageSrc : (orgLogo ?? orgLogoUrl)}
+                fallback={showPropertyCard ? propertyBannerUrl : orgLogoUrl}
+                alt={showPropertyCard
+                  ? `${String(currentPropertyRecord?.name ?? 'Property')} cover photo`
+                  : `${logoLabel} organization image`}
+                usage="card"
+                aspectRatio="16 / 9"
+                sizes="240px"
+                wrapperClassName="absolute inset-0 h-full w-full"
+                className="h-full w-full object-cover"
+              />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
+              <div className="absolute inset-x-0 bottom-0 p-2.5">
+                <p className="truncate text-xs font-bold text-white">
+                  {showPropertyCard ? String(currentPropertyRecord?.name ?? '') : String(orgRecord?.name ?? '')}
+                </p>
+                {showPropertyCard && propertyLocation && (
+                  <p className="truncate text-[0.65rem] text-white/75">{propertyLocation}</p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* User card */}
           {!sidebarCollapsed && user && (
             <div className={[
@@ -312,7 +367,7 @@ export function AppShell({
 
       {/* ── Main area ───────────────────────────────────────────────── */}
       <div className={[
-        'flex min-w-0 flex-1 flex-col transition-all duration-300',
+        'flex min-w-0 flex-1 flex-col transition-[margin-left] duration-300',
         sidebarCollapsed ? 'lg:ml-16' : SIDEBAR_MARGIN,
       ].join(' ')}>
 
@@ -327,7 +382,8 @@ export function AppShell({
             <Menu className="h-5 w-5" />
           </button>
 
-          {/* Search — hidden on small screens, grows but caps on large */}
+          {/* Search — full input from md up; icon-triggered overlay below md so it's
+              still reachable (not dropped) on narrow screens instead of just hidden. */}
           <div className="hidden min-w-0 flex-1 md:block md:max-w-[220px] lg:max-w-sm xl:max-w-md">
             <div className="relative">
               <Search
@@ -344,6 +400,14 @@ export function AppShell({
               </kbd>
             </div>
           </div>
+          <button
+            className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+            onClick={() => setMobileSearchOpen((v) => !v)}
+            aria-label="Search"
+            aria-expanded={mobileSearchOpen}
+          >
+            <Search className="h-4 w-4" />
+          </button>
 
           {/* Right controls — shrink-0 keeps them from wrapping */}
           <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
@@ -354,32 +418,35 @@ export function AppShell({
               </div>
             )}
 
-            {/* AI Assistant shortcut */}
-            <NavLink
-              to={`/${role}/ai`}
-              aria-label="AI Assistant"
-              className={({ isActive }) =>
-                `relative rounded-lg p-2 transition-colors ${
-                  isActive
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                }`
-              }
-            >
-              <Sparkles className="h-4 w-4" />
-            </NavLink>
+            {/* AI Assistant shortcut — gradual rollout: admin/superadmin only for now.
+                Remove this role check once AI is enabled for all roles. */}
+            {(role === 'admin' || role === 'superadmin') && (
+              <NavLink
+                to={`/${role}/ai`}
+                aria-label="AI Assistant"
+                className={({ isActive }) =>
+                  `relative rounded-lg p-2 transition-colors ${
+                    isActive
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }`
+                }
+              >
+                <Sparkles className="h-4 w-4" />
+              </NavLink>
+            )}
 
             {/* Notifications */}
             <NotificationPanel role={role} />
 
-            {/* Theme toggle — hidden on xs */}
+            {/* Theme toggle */}
             <button
               onClick={() =>
                 setTheme(
                   theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light',
                 )
               }
-              className="hidden rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
+              className="inline-flex rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               aria-label="Toggle theme"
             >
               {theme === 'light' ? (
@@ -410,14 +477,32 @@ export function AppShell({
           </div>
         </header>
 
-        {/* Page content */}
+        {/* Mobile search overlay — toggled by the search icon in the header above */}
+        {mobileSearchOpen && (
+          <div className="border-b border-border bg-card px-3 py-2.5 md:hidden">
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60"
+                aria-hidden
+              />
+              <input
+                type="search"
+                placeholder="Search…"
+                autoFocus
+                className="h-9 w-full rounded-lg border border-border bg-muted/50 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none transition-colors focus:border-primary/30 focus:bg-card focus:ring-2 focus:ring-primary/10"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Page content — no key here: see the scroll-reset effect above for why. */}
         <main
-          key={`${location.pathname}${location.search}`}
+          ref={mainRef}
           className={[
-            'animate-page-slide-in flex-1 scroll-smooth',
+            'flex-1 scroll-smooth',
             location.pathname.endsWith('/ai')
               ? 'overflow-hidden'
-              : 'overflow-y-auto pb-24 lg:pb-6',
+              : 'overflow-y-auto overflow-x-hidden pb-6',
           ].join(' ')}
           id="main-content"
           tabIndex={-1}
@@ -429,7 +514,8 @@ export function AppShell({
 
     </div>
 
-    <AIReminderToast />
+    {/* Gradual rollout: admin/superadmin only for now — remove this check once AI is enabled for all roles. */}
+    {(role === 'admin' || role === 'superadmin') && <AIReminderToast />}
     </>
   )
 }

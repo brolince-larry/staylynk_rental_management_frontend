@@ -24,6 +24,18 @@ export const authApi = {
     password:              string
     password_confirmation: string
     country?:              string
+    terms_accepted:        boolean
   }) =>
     apiPost<LoginResponse>('/auth/register', payload),
+
+  forgotPassword: (email: string) =>
+    apiPost<null>('/auth/forgot-password', { email }),
+
+  resetPassword: (payload: {
+    token:                 string
+    email:                 string
+    password:              string
+    password_confirmation: string
+  }) =>
+    apiPost<null>('/auth/reset-password', payload),
 }

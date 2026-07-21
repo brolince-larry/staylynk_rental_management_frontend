@@ -217,12 +217,12 @@ export const paymentsApi = {
   rentSummary: (month?: string) =>
     apiGet<Record<string, unknown>>('/admin/rent/summary', month ? { month } : undefined),
 
-  recordLastPayment: (leaseId: number, data: { last_paid_date: string; last_paid_amount: number; notes?: string }) =>
+  recordLastPayment: (leaseId: string, data: { last_paid_date: string; last_paid_amount: number; notes?: string }) =>
     apiPatch<{ last_paid_date: string; last_paid_amount: number; arrears_balance: number }>(
       `/admin/rent/leases/${leaseId}/record-payment`, data
     ),
 
-  leasePaymentStatus: (leaseId: number) =>
+  leasePaymentStatus: (leaseId: string) =>
     apiGet<Record<string, unknown>>(`/admin/rent/leases/${leaseId}/payment-status`),
 
   updatePropertyPenalty: (propertyId: string, data: {

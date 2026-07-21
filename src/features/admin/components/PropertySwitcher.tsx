@@ -31,12 +31,20 @@ export function PropertySwitcher({ role = 'admin' }: { role?: 'admin' | 'manager
   })
 
   const properties = useMemo(() => optionRows(data), [data])
-  const currentId  = user?.current_property?.id ? String(user.current_property.id) : ''
+
+  // current_property no longer carries a numeric id from the backend (uuid-only
+  // response) — resolve the matching dropdown option (which is still keyed by
+  // numeric id, from the separate properties-options endpoint) via uuid instead.
+  const currentUuid = user?.current_property?.uuid ?? ''
+  const currentOption = useMemo(
+    () => properties.find((p) => String(p.uuid ?? '') === currentUuid) ?? null,
+    [properties, currentUuid],
+  )
+  const currentId = currentOption ? String(currentOption.id) : ''
 
   const selectedName = useMemo(() => {
-    const found = properties.find((p) => String(p.id) === currentId)
-    return String(found?.name ?? user?.current_property?.name ?? '')
-  }, [currentId, properties, user?.current_property?.name])
+    return String(currentOption?.name ?? user?.current_property?.name ?? '')
+  }, [currentOption, user?.current_property?.name])
 
   const addProperty = () => navigate(`/${role}/properties?create=1`)
 

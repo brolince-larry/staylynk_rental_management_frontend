@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTenants, useCreateTenant, useUpdateTenant, useVerifyTenant, useUpdateTenantStatus } from '../hooks'
 import { useDebounce, usePagination, useToast } from '@/hooks'
 import { DataTable, type ColumnDef, type SortState } from '@/components/tables/DataTable'
-import { SearchInput, FilterBar, Select, Modal, Button, FormField, Input, Textarea, ToastContainer } from '@/components/forms'
+import { SearchInput, FilterBar, Select, Modal, Button, ConfirmDialog, FormField, Input, Textarea, ToastContainer } from '@/components/forms'
 import { MediaUploadField, SmartImage } from '@/components/media'
 import { entityIdFromResponse, mediaService } from '@/services/media'
 import { PageHeader, StatusBadge } from '@/components/ui'
@@ -27,6 +27,7 @@ export default function TenantsPage(): React.ReactElement {
   const [sort, setSort] = useState<SortState>({ column: 'created_at', direction: 'desc' })
   const [createOpen, setCreateOpen] = useState(false)
   const [editTenant, setEditTenant] = useState<Tenant | null>(null)
+  const [deletingTenant, setDeletingTenant] = useState<Tenant | null>(null)
   const [profilePhotoFiles, setProfilePhotoFiles] = useState<File[]>([])
   const [mediaProgress, setMediaProgress] = useState<number | null>(null)
   const [uploadingMedia, setUploadingMedia] = useState(false)
@@ -48,10 +49,11 @@ export default function TenantsPage(): React.ReactElement {
   const { mutate: updateTenant, isPending: updating } = useUpdateTenant(String(editTenant?.id ?? ""))
   const { mutate: verifyTenant } = useVerifyTenant()
   const { mutate: updateStatus } = useUpdateTenantStatus()
-  const { mutate: deleteTenant } = useMutation({
+  const { mutate: deleteTenant, isPending: deleting } = useMutation({
     mutationFn: tenantsApi.delete,
     onSuccess: () => {
       success('Tenant deleted')
+      setDeletingTenant(null)
       void qc.invalidateQueries({ queryKey: ['admin', 'tenants'] })
       void qc.invalidateQueries({ queryKey: ['admin', 'tenant-form', 'rooms'] })
     },
@@ -226,7 +228,7 @@ export default function TenantsPage(): React.ReactElement {
         const property = tenantProperty(row)
         return room ? (
           <div>
-            <p className="text-xs font-medium text-foreground">Room {String(room.room_number ?? room.display_name ?? room.id)}</p>
+            <p className="text-xs font-medium text-foreground">Room {String(room.room_number ?? room.id)}</p>
             <p className="text-xs text-muted-foreground">{String(property?.name ?? '—')}</p>
           </div>
         ) : <span className="text-xs text-muted-foreground">No active lease</span>
@@ -240,7 +242,7 @@ export default function TenantsPage(): React.ReactElement {
     {
       key: 'profile_status',
       header: 'Profile',
-      accessor: (row) => <StatusBadge status={String((row.profile as Record<string, unknown> | null)?.status ?? row.status ?? 'pending')} />,
+      accessor: (row) => <StatusBadge status={tenantStatus(row)} />,
     },
     {
       key: 'status',
@@ -262,7 +264,7 @@ export default function TenantsPage(): React.ReactElement {
       width: 'w-28',
       accessor: (row) => {
         const id = row.id as number
-        const status = row.status as string
+        const status = tenantStatus(row)
         return (
           <div className="flex items-center gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
             {!row.is_verified && (
@@ -280,17 +282,17 @@ export default function TenantsPage(): React.ReactElement {
               Edit
             </button>
             <button
-              onClick={() => deleteTenant(id)}
+              onClick={() => setDeletingTenant(row)}
               className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
             >
               <Trash2 className="h-3 w-3" /> Delete
             </button>
             {status === 'active' ? (
               <button
-                onClick={() => updateStatus({ id, status: 'suspended' }, { onSuccess: () => success('Tenant suspended') })}
+                onClick={() => updateStatus({ id, status: 'inactive' }, { onSuccess: () => success('Tenant deactivated') })}
                 className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
               >
-                Suspend
+                Deactivate
               </button>
             ) : (
               <button
@@ -480,6 +482,17 @@ export default function TenantsPage(): React.ReactElement {
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        open={!!deletingTenant}
+        onClose={() => setDeletingTenant(null)}
+        onConfirm={() => deletingTenant && deleteTenant(String(deletingTenant.id))}
+        loading={deleting}
+        title="Delete Tenant"
+        description={`This permanently removes ${deletingTenant?.name ?? 'this tenant'} and their tenant profile. This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+      />
     </>
   )
 }
@@ -557,6 +570,14 @@ function tenantProperty(tenant: Tenant): Record<string, unknown> | null {
   const direct = tenant.property as Record<string, unknown> | null
   const lease = tenant.active_lease as Record<string, unknown> | null
   return direct ?? (lease?.property as Record<string, unknown> | null) ?? null
+}
+
+// Deactivate/Activate writes to the tenant profile's status (via
+// PATCH .../status), not the user account's own status — so the toggle
+// must read the same field it mutates, matching the "Profile" column.
+function tenantStatus(tenant: Tenant): string {
+  const profile = tenant.profile as Record<string, unknown> | null
+  return String(profile?.status ?? tenant.status ?? 'pending')
 }
 
 function leaseStatus(tenant: Tenant): TenantSchema['lease_status'] {

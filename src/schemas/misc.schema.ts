@@ -11,12 +11,20 @@ export const announcementSchema = z.object({
 })
 export type AnnouncementSchema = z.infer<typeof announcementSchema>
 
+// Tenant compose: no recipient picker — the backend auto-routes to the
+// property's manager/admin.
 export const messageSchema = z.object({
   subject:  z.string().max(255).optional(),
   body:     z.string().min(1, 'Message cannot be empty').max(5000),
-  parent_id: z.coerce.number().int().positive().optional(),
+  parent_id: z.string().optional(),
 })
 export type MessageSchema = z.infer<typeof messageSchema>
+
+// Manager/admin compose: the sender must pick a recipient.
+export const staffMessageSchema = messageSchema.extend({
+  receiver_id: z.string().min(1, 'Recipient is required'),
+})
+export type StaffMessageSchema = z.infer<typeof staffMessageSchema>
 
 export const expenseSchema = z.object({
   title:          z.string().min(3).max(255),

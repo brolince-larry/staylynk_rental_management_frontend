@@ -107,4 +107,5 @@ export const subscriptionsApi = {
   current: () => apiGet<CurrentSubscriptionPayload>('/admin/subscription/current'),
   subscribe: (data: { plan_slug: string; billing_cycle: BillingCycle; phone_number?: string }) =>
     apiPost<SubscribeResult>('/admin/subscription/subscribe', data),
+  markPlanIntroSeen: () => apiPost<null>('/admin/subscription/plan-intro-seen', {}),
 }

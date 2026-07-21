@@ -58,3 +58,34 @@ export function isUnprocessable(err: unknown): boolean {
 export function isTooManyRequests(err: unknown): boolean {
   return isApiError(err) && err.status === 429
 }
+
+export interface PermissionDeniedBlock {
+  permission: string
+  role: string
+  steps: string[]
+}
+
+/**
+ * Matches the `permission_denied` 403 payload shape returned by
+ * Controller::requirePropertyFeature() on the backend — used by every
+ * manager-scoped action gated by a per-property permission (rooms, listings,
+ * property videos, etc). Returns null for any other kind of error so callers
+ * can fall through to a generic toast.
+ */
+export function extractPermissionDenied(err: unknown): PermissionDeniedBlock | null {
+  if (!isApiError(err)) return null
+  const apiErr = err as ApiError
+  const payload = apiErr.data as Record<string, unknown> | null
+  const data = (payload?.data && typeof payload.data === 'object'
+    ? payload.data
+    : payload) as Record<string, unknown> | null
+
+  if (apiErr.status === 403 && data?.permission_denied === true) {
+    return {
+      permission: String(data.permission ?? ''),
+      role: String(data.role ?? 'manager'),
+      steps: Array.isArray(data.steps) ? (data.steps as string[]) : [],
+    }
+  }
+  return null
+}

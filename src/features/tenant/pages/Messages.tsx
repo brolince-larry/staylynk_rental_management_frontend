@@ -1,54 +1,55 @@
 // src/features/tenant/pages/Messages.tsx
-import React, { useState, useEffect } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { Send } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
-import { useTenantMessages, useSendMessage, useTenantAnnouncements } from '../hooks/index'
+import { useTenantMessages, useTenantMessageThread, useSendMessage, useTenantAnnouncements } from '../hooks/index'
 import { useToast } from '@/hooks'
 import { useAuthStore } from '@/store/auth.store'
-import { getEcho } from '@/lib/echo'
+import { useRealtime } from '@/providers/realtimeContext'
 import { Modal, Button, FormField, Input, Textarea, ToastContainer } from '@/components/forms'
-import { PageHeader, SectionCard } from '@/components/ui'
+import { PageHeader } from '@/components/ui'
 import { messageSchema, type MessageSchema } from '@/schemas/misc.schema'
 import { formatDate, formatRelative } from '@/utils/format'
+import { MessageThreadBubbles } from '@/components/messaging/MessageThreadBubbles'
 
 type Message      = Record<string, unknown>
 type Announcement = Record<string, unknown>
 
 export default function TenantMessages(): React.ReactElement {
   const [tab, setTab]            = useState<'messages' | 'announcements'>('messages')
-  const [selected, setSelected]  = useState<Message | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [composeOpen, setCompose] = useState(false)
   const { toasts, success, error: toastError, dismiss } = useToast()
 
   const qc = useQueryClient()
   const { token, user } = useAuthStore()
   const userId = user?.id
+  const { subscribePrivate } = useRealtime()
+  const userChannel = useMemo(() => (
+    token && userId ? `users.${String(userId)}` : null
+  ), [token, userId])
+  const refreshMessages = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ['tenant', 'messages'] })
+  }, [qc])
 
   const { data: msgsData, isLoading: msgsLoading } = useTenantMessages({ per_page: 30 })
   const { data: annData,  isLoading: annLoading }  = useTenantAnnouncements({ per_page: 10 })
   const { mutate: send,   isPending: sending }      = useSendMessage()
+  const { data: thread, isLoading: threadLoading }  = useTenantMessageThread(selectedId)
 
   // Real-time: refresh inbox and unread count when a message arrives
   useEffect(() => {
-    if (!token || !userId) return
-    const echo = getEcho(token)
-    if (!echo) return
-    const channel = echo.private(`users.${userId}`)
-    channel.listen('.message.sent', () => {
-      void qc.invalidateQueries({ queryKey: ['tenant', 'messages'] })
-    })
-    channel.listen('.message.read', () => {
-      void qc.invalidateQueries({ queryKey: ['tenant', 'messages'] })
-    })
+    if (!userChannel) return
+    const cleanupSent = subscribePrivate(userChannel, '.message.sent', refreshMessages)
+    const cleanupRead = subscribePrivate(userChannel, '.message.read', refreshMessages)
     return () => {
-      channel.stopListening('.message.sent')
-      channel.stopListening('.message.read')
-      echo.leave(`users.${userId}`)
+      cleanupSent()
+      cleanupRead()
     }
-  }, [token, userId, qc])
+  }, [userChannel, subscribePrivate, refreshMessages])
 
   const form = useForm<MessageSchema>({ resolver: zodResolver(messageSchema) })
 
@@ -83,9 +84,9 @@ export default function TenantMessages(): React.ReactElement {
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === t ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
               {l}
-              {t === 'messages' && messages.filter(m => !m.read_at).length > 0 && (
+              {t === 'messages' && messages.filter(m => !m.is_read).length > 0 && (
                 <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] text-white font-bold">
-                  {messages.filter(m => !m.read_at).length}
+                  {messages.filter(m => !m.is_read).length}
                 </span>
               )}
             </button>
@@ -111,10 +112,11 @@ export default function TenantMessages(): React.ReactElement {
                   </div>
                 ) : messages.map(msg => {
                   const sender = msg.sender as Record<string, string> | null
-                  const isRead = !!msg.read_at
+                  const isRead = !!msg.is_read
+                  const id = msg.id as string
                   return (
-                    <button key={msg.id as number} onClick={() => setSelected(msg)}
-                      className={`w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors ${selected?.id === msg.id ? 'bg-muted/50' : ''}`}>
+                    <button key={id} onClick={() => setSelectedId(id)}
+                      className={`w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors ${selectedId === id ? 'bg-muted/50' : ''}`}>
                       <div className="flex items-center justify-between mb-0.5">
                         <p className={`text-xs truncate ${isRead ? 'text-foreground' : 'font-semibold text-foreground'}`}>
                           {sender?.name ?? 'Management'}
@@ -131,29 +133,39 @@ export default function TenantMessages(): React.ReactElement {
 
             {/* Detail */}
             <div className="rounded-xl border border-border bg-card">
-              {selected ? (
+              {!selectedId ? (
+                <div className="flex flex-col items-center justify-center h-64 text-center">
+                  <p className="text-4xl mb-2">💬</p>
+                  <p className="text-sm text-muted-foreground">Select a message to read</p>
+                </div>
+              ) : threadLoading || !thread ? (
+                <div className="p-5 space-y-3">
+                  <div className="h-4 bg-muted rounded animate-pulse w-1/2" />
+                  <div className="h-3 bg-muted rounded animate-pulse w-full" />
+                  <div className="h-3 bg-muted rounded animate-pulse w-3/4" />
+                </div>
+              ) : (
                 <div className="p-5">
                   <div className="border-b border-border pb-4 mb-4">
-                    <p className="text-base font-semibold text-foreground">{selected.subject as string || '(No subject)'}</p>
+                    <p className="text-base font-semibold text-foreground">{thread.subject || '(No subject)'}</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      From {(selected.sender as Record<string, string> | null)?.name ?? 'Management'} · {formatRelative(selected.created_at as string)}
+                      From {(thread.sender?.id === user?.id ? thread.receiver?.name : thread.sender?.name) ?? 'Management'} · {formatRelative(thread.created_at)}
                     </p>
                   </div>
-                  <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{selected.body as string}</p>
+
+                  <div className="max-h-[420px]">
+                    <MessageThreadBubbles thread={thread} currentUserId={user?.id} />
+                  </div>
+
                   <div className="mt-4 pt-4 border-t border-border">
                     <Button size="sm" onClick={() => {
-                      form.setValue('subject', `Re: ${selected.subject as string ?? ''}`)
-                      form.setValue('parent_id', selected.id as number)
+                      form.setValue('subject', thread.subject ? `Re: ${thread.subject}` : '')
+                      form.setValue('parent_id', thread.id)
                       setCompose(true)
                     }}>
                       Reply
                     </Button>
                   </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-64 text-center">
-                  <p className="text-4xl mb-2">💬</p>
-                  <p className="text-sm text-muted-foreground">Select a message to read</p>
                 </div>
               )}
             </div>
@@ -177,7 +189,7 @@ export default function TenantMessages(): React.ReactElement {
                 <p className="text-sm font-medium text-foreground">No announcements</p>
               </div>
             ) : announcements.map(ann => (
-              <div key={ann.id as number} className={`rounded-xl border bg-card p-4 ${Boolean(ann.is_pinned) ? 'border-primary/40' : 'border-border'}`}>
+              <div key={ann.id as number} className={`rounded-xl border bg-card p-4 ${ann.is_pinned ? 'border-primary/40' : 'border-border'}`}>
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-2">
                     {Boolean(ann.is_pinned) && <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">📌 Pinned</span>}

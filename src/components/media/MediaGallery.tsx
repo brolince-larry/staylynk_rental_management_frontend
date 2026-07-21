@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import type { MediaItem } from '@/services/media/mediaService'
 import { pickImageUrl } from '@/services/media/cdnService'
 import { usePrefetchImages } from '@/hooks/media/usePrefetchImages'
+import { useBodyScrollLock } from '@/hooks'
 import { SmartImage } from './SmartImage'
 
 interface MediaGalleryProps {
@@ -43,6 +44,8 @@ export function MediaGallery({ items, title = 'Property gallery', className = ''
     pickImageUrl(safeItems[index + 1]?.optimized_urls, 'large'),
     pickImageUrl(safeItems[index + 2]?.optimized_urls, 'large'),
   ], count > 1)
+
+  useBodyScrollLock(fullscreen)
 
   useEffect(() => {
     if (!fullscreen) return undefined

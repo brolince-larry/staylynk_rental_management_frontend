@@ -1,12 +1,15 @@
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { Pin, Globe, Users, UserCog, Eye, EyeOff, Trash2, Edit2, Plus, Send, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useRealtime } from '@/providers/realtimeContext'
 import { DataTable, type ColumnDef } from '@/components/tables/DataTable'
 import { Button, FormField, Input, Modal, Select, Textarea, ToastContainer } from '@/components/forms'
 import { PageHeader, StatusBadge } from '@/components/ui'
 import { useToast } from '@/hooks'
 import { formatDatetime } from '@/utils/format'
-import { useProperties } from '../hooks/index'
+import { propertiesApi } from '@/api/properties'
+import { useAuthStore } from '@/store/auth.store'
 import {
   useAnnouncements, useCreateAnnouncement, useUpdateAnnouncement,
   useDeleteAnnouncement, usePublishAnnouncement, useUnpublishAnnouncement,
@@ -77,8 +80,31 @@ export default function AnnouncementsPage({ role }: Props): React.ReactElement {
   }
 
   const { data, isLoading } = useAnnouncements(role, queryParams)
-  const { data: propertiesRes } = useProperties()
+  const orgId = useAuthStore((s) => s.user?.org?.id?.toString() ?? 'unknown')
+  const { data: propertiesRes } = useQuery({
+    queryKey: [role, 'announcements', 'properties', orgId],
+    queryFn: () => (isAdmin ? propertiesApi.list() : propertiesApi.managerList()).then((r) => r.data),
+    staleTime: Infinity,
+  })
   const properties = (propertiesRes?.data ?? []) as { id: number; name: string }[]
+
+  // Real-time: refresh the list the instant a new announcement is published,
+  // instead of only picking it up on the next manual page load/refresh.
+  const qc = useQueryClient()
+  const { token, user } = useAuthStore()
+  const { subscribePrivate } = useRealtime()
+  const notificationsChannel = useMemo(() => (
+    token && user?.id ? `notifications.${String(user.id)}` : null
+  ), [token, user?.id])
+
+  useEffect(() => {
+    if (!notificationsChannel) return
+
+    return subscribePrivate<{ category?: string }>(notificationsChannel, '.new.notification', (payload) => {
+      if (payload.category !== 'announcement') return
+      void qc.invalidateQueries({ queryKey: [role, 'announcements', orgId] })
+    })
+  }, [notificationsChannel, subscribePrivate, qc, role, orgId])
 
   const { mutate: create, isPending: creating } = useCreateAnnouncement(role)
   const { mutate: update, isPending: updating } = useUpdateAnnouncement(role)

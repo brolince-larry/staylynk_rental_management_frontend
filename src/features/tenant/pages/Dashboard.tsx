@@ -2,15 +2,16 @@
 import React from 'react'
 import { Helmet } from 'react-helmet-async'
 import { Link } from 'react-router-dom'
-import { format } from 'date-fns'
+import { format, addMonths } from 'date-fns'
 import { PieChart, Pie, Cell } from 'recharts'
 import { useTenantDashboard } from '../hooks/useDashboard'
 import { useAuthStore } from '@/store/auth.store'
-import { SectionCard, StatusBadge, PageHeader, EmptyState, SkeletonTable, ViewAllLink } from '@/components/ui'
+import { SectionCard, StatusBadge, PageHeader, EmptyState, SkeletonTable, ViewAllLink, StatCard } from '@/components/ui'
 import { ToastContainer } from '@/components/forms'
 import { useToast } from '@/hooks'
 import { openSignedDocument } from '@/api/documentDownloads'
 import { publicSiteUrl } from '@/config/env'
+import { SmartImage } from '@/components/media'
 
 function fmt(n: number, currency = 'USD'): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(n)
@@ -18,6 +19,23 @@ function fmt(n: number, currency = 'USD'): string {
 
 function fmtDate(iso: string): string {
   try { return format(new Date(iso), 'MMM d, yyyy') } catch { return iso }
+}
+
+// Next 6 billing months starting from the next due date — the lease cycle is
+// monthly, so each month after the first is a projection, not a confirmed invoice.
+function upcomingMonths(fromIso: string): { label: string; year: string }[] {
+  const start = new Date(fromIso)
+  return Array.from({ length: 6 }, (_, i) => {
+    const d = addMonths(start, i)
+    return { label: format(d, 'MMM'), year: format(d, 'yyyy') }
+  })
+}
+
+function greeting(): string {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  return 'Good evening'
 }
 
 // ─── Payment donut ────────────────────────────────────────────────────────
@@ -59,6 +77,10 @@ function PaymentDonut({ paid, pending, overdue, total }: PaymentDonutProps): Rea
   )
 }
 
+// AI Insights panel — gradual rollout: hidden for tenants for now (AI is
+// admin/superadmin only until fully rolled out). Flip to true to restore.
+const AI_INSIGHTS_ENABLED: boolean = false
+
 export default function TenantDashboard(): React.ReactElement {
   const user = useAuthStore((s) => s.user)
   const orgCurrency = user?.org?.currency ?? 'USD'
@@ -96,6 +118,7 @@ export default function TenantDashboard(): React.ReactElement {
     amount: number; base_rent: number; arrears: number; penalty: number
     due_date: string | null; days_until_due: number | null; status: string
     invoice_number?: string; is_first_payment?: boolean; deposit_amount?: number
+    is_overdue?: boolean; urgency?: 'overdue' | 'due_soon' | 'ok'
   } | null | undefined
   const penaltyNotice = data?.penalty_notice as {
     enabled: boolean; type: string; amount: number; grace_days: number
@@ -112,8 +135,13 @@ export default function TenantDashboard(): React.ReactElement {
       <ToastContainer toasts={toasts} dismiss={dismiss} />
       <div className="p-6 max-w-[1400px]">
         <PageHeader
-          title="Dashboard"
-          subtitle={`Welcome back, ${user?.name?.split(' ')[0] ?? 'there'}! 👋 Here's what's happening with your stay.`}
+          title={
+            <>
+              {greeting()}, <span className="text-primary">{user?.name?.split(' ')[0] ?? 'there'}</span>{' '}
+              <span className="inline-block">👋</span>
+            </>
+          }
+          subtitle="Here's what's happening with your stay."
           actions={
             <Link to="/tenant/invoices" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
               💳 Make a Payment
@@ -127,100 +155,177 @@ export default function TenantDashboard(): React.ReactElement {
           </div>
         )}
 
-        {/* ── Top 4 info cards ──────────────────────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-          {/* Room */}
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 dark:bg-violet-950/50 text-xl shrink-0">🛏</div>
-              <div>
-                <p className="text-xs text-muted-foreground">Room</p>
-                {isLoading ? <div className="h-6 w-12 bg-muted rounded animate-pulse mt-0.5" /> : (
-                  <p className="text-2xl font-bold text-foreground leading-tight">{room?.room_number ?? '—'}</p>
-                )}
-                <p className="text-xs text-muted-foreground mt-0.5">{room?.type ?? 'N/A'}</p>
-                <p className="text-xs text-muted-foreground">Block {room?.block}, {room?.floor} Floor</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Monthly rent */}
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950/50 text-xl shrink-0">💰</div>
-              <div>
-                <p className="text-xs text-muted-foreground">Monthly Rent</p>
-                {isLoading ? <div className="h-6 w-20 bg-muted rounded animate-pulse mt-0.5" /> : (
-                  <p className="text-xl font-bold text-foreground">{fmt(lease?.monthly_rent ?? 0, orgCurrency)}</p>
-                )}
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Due on {lease?.payment_due_day ?? 1}st of each month
+        {/* ── Monthly rent — featured hero card ────────────────────── */}
+        <div className="app-gradient-primary relative mb-4 overflow-hidden rounded-2xl p-5 text-white shadow-lg shadow-violet-500/20 sm:p-6">
+          <div className="pointer-events-none absolute -right-8 -top-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+          <div className="relative flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-white/75">Monthly Rent</p>
+              {isLoading ? (
+                <div className="mt-1 h-8 w-32 animate-pulse rounded bg-white/20 sm:h-9" />
+              ) : (
+                <p className="truncate text-2xl font-bold tracking-tight sm:text-3xl">
+                  {fmt(lease?.monthly_rent ?? 0, orgCurrency)}
                 </p>
-              </div>
+              )}
+              <p className="mt-1 truncate text-xs text-white/75">
+                Due on {lease?.payment_due_day ?? 1}st of each month
+              </p>
+            </div>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-2xl backdrop-blur-sm sm:h-14 sm:w-14">
+              💰
             </div>
           </div>
+        </div>
 
-          {/* Next payment */}
-          <div className={`rounded-xl border bg-card p-4 ${next?.is_first_payment ? 'border-violet-400 dark:border-violet-700' : next?.days_until_due != null && next.days_until_due < 0 ? 'border-red-400 dark:border-red-700' : next?.days_until_due != null && next.days_until_due <= 5 ? 'border-amber-400 dark:border-amber-700' : 'border-border'}`}>
-            <div className="flex items-start gap-3">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-xl shrink-0 ${next?.is_first_payment ? 'bg-violet-100 dark:bg-violet-950/50' : 'bg-amber-100 dark:bg-amber-950/50'}`}>
-                {next?.is_first_payment ? '🏠' : '📅'}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-xs text-muted-foreground">Next Payment Due</p>
-                  {next?.is_first_payment && (
-                    <span className="rounded-full bg-violet-100 dark:bg-violet-950/50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700 dark:text-violet-300">First Payment</span>
-                  )}
-                </div>
-                {isLoading ? <div className="h-6 w-24 bg-muted rounded animate-pulse mt-0.5" /> : (
-                  <p className="text-xl font-bold text-foreground leading-tight">
-                    {next?.due_date ? fmtDate(next.due_date) : 'N/A'}
-                  </p>
+        {/* ── Quick actions row ─────────────────────────────────────── */}
+        <div className="mb-5 grid grid-cols-4 gap-2 sm:gap-4">
+          {[
+            { icon: '💳', bg: 'bg-violet-100 dark:bg-violet-950/50', title: 'Make a Payment', href: '/tenant/invoices' },
+            { icon: '📋', bg: 'bg-blue-100 dark:bg-blue-950/50', title: 'Payment History', href: '/tenant/payments' },
+            { icon: '⬇️', bg: 'bg-emerald-100 dark:bg-emerald-950/50', title: 'Download Receipt', href: '/tenant/payments' },
+            { icon: '💬', bg: 'bg-violet-100 dark:bg-violet-950/50', title: 'Support', href: '/tenant/support' },
+          ].map((a) => (
+            <Link key={a.title} to={a.href}
+              className="flex min-w-0 flex-col items-center gap-2 rounded-xl px-1 py-2 text-center transition-transform hover:-translate-y-0.5">
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-base shadow-sm sm:h-12 sm:w-12 ${a.bg}`}>{a.icon}</div>
+              <p className="line-clamp-2 text-[0.7rem] font-medium leading-tight text-foreground sm:text-xs">{a.title}</p>
+            </Link>
+          ))}
+        </div>
+
+        {/* ── Room / Total Paid / Next payment / Lease status ───────── */}
+        <div className="grid grid-cols-1 gap-3 mb-5 sm:grid-cols-2">
+          <StatCard
+            label="Room"
+            value={room?.room_number ?? '—'}
+            icon={<span className="text-lg">🛏</span>}
+            iconBg="bg-violet-100 dark:bg-violet-950/50"
+            accentGlow="bg-violet-500"
+            loading={isLoading}
+            footer={
+              <p className="text-xs text-muted-foreground">
+                {room?.type ?? 'N/A'} · Block {room?.block}, {room?.floor} Floor
+              </p>
+            }
+          />
+
+          <StatCard
+            label="Total Paid"
+            value={overview ? fmt(overview.total_paid, orgCurrency) : '—'}
+            icon={<span className="text-lg">💰</span>}
+            iconBg="bg-amber-100 dark:bg-amber-950/50"
+            accentGlow="bg-amber-500"
+            loading={isLoading}
+            footer={<p className="text-xs text-muted-foreground">All time</p>}
+          />
+
+          <StatCard
+            label="Next Payment Due"
+            value={next?.due_date ? fmtDate(next.due_date) : 'N/A'}
+            icon={<span className="text-lg">{next?.is_first_payment ? '🏠' : '📅'}</span>}
+            iconBg={
+              next?.is_first_payment ? 'bg-violet-100 dark:bg-violet-950/50'
+                : next?.urgency === 'overdue' ? 'bg-red-100 dark:bg-red-950/50'
+                : next?.urgency === 'due_soon' ? 'bg-amber-100 dark:bg-amber-950/50'
+                : 'bg-emerald-100 dark:bg-emerald-950/50'
+            }
+            accentBorder={
+              next?.is_first_payment ? 'border-violet-500'
+                : next?.urgency === 'overdue' ? 'border-red-500'
+                : next?.urgency === 'due_soon' ? 'border-amber-500'
+                : 'border-emerald-500'
+            }
+            accentGlow={
+              next?.is_first_payment ? 'bg-violet-500'
+                : next?.urgency === 'overdue' ? 'bg-red-500'
+                : next?.urgency === 'due_soon' ? 'bg-amber-500'
+                : 'bg-emerald-500'
+            }
+            loading={isLoading}
+            footer={
+              <div className="space-y-1">
+                {next?.is_first_payment && (
+                  <span className="inline-flex rounded-full bg-violet-100 dark:bg-violet-950/50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700 dark:text-violet-300">
+                    First Payment
+                  </span>
                 )}
                 {next && next.due_date && !next.is_first_payment && (
-                  <p className={`text-xs font-medium mt-0.5 ${(next.days_until_due ?? 0) < 0 ? 'text-red-600' : (next.days_until_due ?? 0) <= 5 ? 'text-amber-600' : 'text-muted-foreground'}`}>
-                    {(next.days_until_due ?? 0) < 0
+                  <p className={`text-xs font-medium ${next.urgency === 'overdue' ? 'text-red-600' : next.urgency === 'due_soon' ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    {next.is_overdue
                       ? `${Math.abs(next.days_until_due ?? 0)} days overdue`
-                      : `${next.days_until_due} days remaining`}
+                      : (next.days_until_due ?? 0) <= 0
+                        ? 'Due today'
+                        : `${next.days_until_due} days remaining`}
                   </p>
                 )}
                 {next && next.amount > 0 && (
-                  <p className="text-xs font-bold text-primary mt-1">{fmt(next.amount, orgCurrency)}</p>
+                  <p className="text-xs font-bold text-primary">{fmt(next.amount, orgCurrency)}</p>
                 )}
                 {next?.is_first_payment ? (
-                  <div className="mt-1.5 space-y-0.5">
+                  <div className="space-y-0.5">
                     <p className="text-[10px] text-muted-foreground">Rent: {fmt(next.base_rent, orgCurrency)}</p>
                     {(next.deposit_amount ?? 0) > 0 && (
                       <p className="text-[10px] text-violet-600">+ {fmt(next.deposit_amount ?? 0, orgCurrency)} deposit</p>
                     )}
                   </div>
                 ) : next && (next.arrears > 0 || next.penalty > 0) && (
-                  <div className="mt-1.5 space-y-0.5">
+                  <div className="space-y-0.5">
                     {next.arrears > 0 && <p className="text-[10px] text-orange-600">+ {fmt(next.arrears, orgCurrency)} arrears</p>}
                     {next.penalty > 0 && <p className="text-[10px] text-red-600">+ {fmt(next.penalty, orgCurrency)} penalty</p>}
                   </div>
                 )}
               </div>
-            </div>
-          </div>
+            }
+          />
 
-          {/* Lease status */}
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950/50 text-xl shrink-0">✅</div>
-              <div>
-                <p className="text-xs text-muted-foreground">Lease Status</p>
-                {isLoading ? <div className="h-6 w-16 bg-muted rounded animate-pulse mt-0.5" /> : (
-                  <p className="text-xl font-bold text-emerald-600 capitalize">{lease?.status ?? 'N/A'}</p>
-                )}
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Ends {lease?.end_date ? fmtDate(lease.end_date) : '—'}
+          <StatCard
+            label="Lease Status"
+            value={lease?.status ?? 'N/A'}
+            valueClassName="capitalize text-emerald-600 dark:text-emerald-400"
+            icon={<span className="text-lg">✅</span>}
+            iconBg="bg-emerald-100 dark:bg-emerald-950/50"
+            accentGlow="bg-emerald-500"
+            loading={isLoading}
+            footer={
+              <p className="text-xs text-muted-foreground">
+                Ends {lease?.end_date ? fmtDate(lease.end_date) : '—'}
+              </p>
+            }
+          />
+        </div>
+
+        {/* ── Upcoming payments ─────────────────────────────────────── */}
+        <SectionCard
+          title="Upcoming Payments"
+          action={<ViewAllLink to="/tenant/invoices" label="View all" />}
+          className="mb-4"
+        >
+          {isLoading ? (
+            <div className="h-20 animate-pulse rounded-lg bg-muted" />
+          ) : next?.due_date ? (
+            <div className="flex items-center gap-4">
+              <div className="min-w-0 flex-1 overflow-x-auto">
+                <div className="flex min-w-max items-end gap-4 border-t border-dashed border-border pt-3 sm:gap-6">
+                  {upcomingMonths(next.due_date).map((m, i) => (
+                    <div key={`${m.label}-${m.year}`} className="flex flex-col items-center gap-1.5">
+                      <div className={`h-6 w-2.5 rounded-full ${i === 0 ? 'bg-primary' : 'bg-muted-foreground/25'}`} />
+                      <p className="whitespace-nowrap text-center text-[0.65rem] leading-tight text-muted-foreground">
+                        {m.label}<br />{m.year}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="shrink-0 rounded-xl border border-border bg-muted/30 px-3.5 py-2.5 text-center">
+                <p className="text-lg font-bold leading-none text-foreground">
+                  ⏳ {Math.max(next.days_until_due ?? 0, 0)}
                 </p>
+                <p className="mt-1 whitespace-nowrap text-[0.65rem] text-muted-foreground">Days Left</p>
               </div>
             </div>
-          </div>
-        </div>
+          ) : <EmptyState title="No upcoming payments" />}
+        </SectionCard>
 
         {/* ── Penalty notice banner (never shown to first-timers) ──── */}
         {penaltyNotice?.enabled && !next?.is_first_payment && (
@@ -250,20 +355,22 @@ export default function TenantDashboard(): React.ReactElement {
             ) : lease ? (
               <>
                 {[
-                  ['Lease ID', lease.lease_number],
-                  ['Start Date', fmtDate(lease.start_date)],
-                  ['End Date', fmtDate(lease.end_date)],
-                  ['Lease Term', `${lease.term_months} Months`],
-                  ['Monthly Rent', fmt(lease.monthly_rent, orgCurrency)],
-                  ['Security Deposit', fmt(lease.security_deposit, orgCurrency)],
-                  ['Payment Due Date', `${(lease as Record<string, unknown>).payment_due_day ?? 1}st Of Each Month`],
-                  ['Payment Method', lease.payment_method?.replace(/_/g, ' ')],
-                  ...(lease.last_paid_date ? [['Last Payment', `${fmtDate(lease.last_paid_date)} — ${fmt((lease as Record<string, unknown>).last_paid_amount as number ?? 0, orgCurrency)}`]] : []),
-                  ...((lease as Record<string, unknown>).arrears_balance as number > 0 ? [['Arrears Balance', fmt((lease as Record<string, unknown>).arrears_balance as number, orgCurrency)]] : []),
-                ].map(([label, value]) => (
-                  <div key={label as string} className="flex justify-between py-1.5 border-b border-border last:border-0">
-                    <span className="text-xs text-muted-foreground">{label as string}</span>
-                    <span className="text-xs font-medium text-foreground text-right capitalize">{value as string}</span>
+                  ['🪪', 'Lease ID', lease.lease_number],
+                  ['📅', 'Start Date', fmtDate(lease.start_date)],
+                  ['📅', 'End Date', fmtDate(lease.end_date)],
+                  ['🔁', 'Lease Term', `${lease.term_months} Months`],
+                  ['💰', 'Monthly Rent', fmt(lease.monthly_rent, orgCurrency)],
+                  ['🔒', 'Security Deposit', fmt(lease.security_deposit, orgCurrency)],
+                  ['🔁', 'Payment Due Date', `${(lease as Record<string, unknown>).payment_due_day ?? 1}st Of Each Month`],
+                  ['💳', 'Payment Method', lease.payment_method?.replace(/_/g, ' ')],
+                  ...(lease.last_paid_date ? [['✅', 'Last Payment', `${fmtDate(lease.last_paid_date)} — ${fmt((lease as Record<string, unknown>).last_paid_amount as number ?? 0, orgCurrency)}`]] : []),
+                  ...((lease as Record<string, unknown>).arrears_balance as number > 0 ? [['⚠️', 'Arrears Balance', fmt((lease as Record<string, unknown>).arrears_balance as number, orgCurrency)]] : []),
+                ].map(([icon, label, value]) => (
+                  <div key={label as string} className="flex justify-between gap-3 py-1.5 border-b border-border last:border-0">
+                    <span className="flex min-w-0 shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                      <span className="text-[0.8rem]">{icon as string}</span> {label as string}
+                    </span>
+                    <span className="min-w-0 break-words text-xs font-medium text-foreground text-right capitalize">{value as string}</span>
                   </div>
                 ))}
                 <button
@@ -302,9 +409,12 @@ export default function TenantDashboard(): React.ReactElement {
                 <div className="h-10 w-24 bg-muted rounded animate-pulse mx-auto" />
               </div>
             ) : (
-              <div className="text-center py-2">
-                <p className="text-xs text-muted-foreground mb-1">Total Outstanding</p>
-                <p className="text-4xl font-bold text-emerald-600">{fmt(balance?.total_outstanding ?? 0, orgCurrency)}</p>
+              <div className="relative py-2 text-center">
+                <div className="pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-500 opacity-[0.08] blur-2xl dark:opacity-[0.14]" />
+                <p className="relative text-xs text-muted-foreground mb-1">Total Outstanding</p>
+                <p className="relative truncate text-2xl font-bold text-emerald-600 sm:text-3xl lg:text-4xl" title={fmt(balance?.total_outstanding ?? 0, orgCurrency)}>
+                  {fmt(balance?.total_outstanding ?? 0, orgCurrency)}
+                </p>
                 {balance?.is_up_to_date && (
                   <div className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400">
                     ✅ You are all up to date!
@@ -315,29 +425,6 @@ export default function TenantDashboard(): React.ReactElement {
                 </Link>
               </div>
             )}
-
-            {/* Quick actions */}
-            <div className="mt-5 space-y-2">
-              <p className="text-xs font-semibold text-foreground">Quick Actions</p>
-              {[
-                { icon: '💳', bg: 'bg-violet-100 dark:bg-violet-950/50', title: 'Make a Payment', sub: 'Pay your rent securely', href: '/tenant/invoices' },
-                { icon: '⬇️', bg: 'bg-emerald-100 dark:bg-emerald-950/50', title: 'Download Receipt', sub: 'Get your payment receipt', href: '/tenant/payments' },
-                { icon: '🔧', bg: 'bg-amber-100 dark:bg-amber-950/50', title: 'Maintenance Request', sub: 'Report an issue', href: '/tenant/maintenance' },
-                { icon: '💬', bg: 'bg-blue-100 dark:bg-blue-950/50', title: 'Contact Management', sub: 'Get in touch', href: '/tenant/messages' },
-              ].map((a) => (
-                <Link key={a.title} to={a.href}
-                  className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2.5 hover:bg-muted transition-colors">
-                  <div className="flex items-center gap-2.5">
-                    <div className={`h-8 w-8 rounded-lg flex items-center justify-center text-sm ${a.bg}`}>{a.icon}</div>
-                    <div>
-                      <p className="text-xs font-medium text-foreground">{a.title}</p>
-                      <p className="text-xs text-muted-foreground">{a.sub}</p>
-                    </div>
-                  </div>
-                  <span className="text-muted-foreground text-sm">›</span>
-                </Link>
-              ))}
-            </div>
           </SectionCard>
         </div>
 
@@ -367,8 +454,8 @@ export default function TenantDashboard(): React.ReactElement {
                         {inv.paid_at ? fmtDate(inv.paid_at) : '—'}
                       </td>
                       <td className="px-4 py-3">
-                        {inv.status === 'paid' ? (
-                          <button type="button" onClick={() => downloadReceipt(String(inv.id))}
+                        {inv.status === 'paid' && inv.payment_uuid ? (
+                          <button type="button" onClick={() => downloadReceipt(inv.payment_uuid as string)}
                             className="text-xs text-primary hover:underline">⬇ Download</button>
                         ) : <span className="text-xs text-muted-foreground">—</span>}
                       </td>
@@ -385,12 +472,24 @@ export default function TenantDashboard(): React.ReactElement {
           {/* Room details */}
           <SectionCard title="Room Details">
             <div className="flex gap-3">
-              <div className="w-28 h-22 bg-muted rounded-lg flex items-center justify-center text-muted-foreground text-2xl shrink-0 overflow-hidden" style={{ height: 88 }}>
-                🖼
+              <div className="w-28 shrink-0 overflow-hidden rounded-lg bg-muted" style={{ height: 88 }}>
+                {room?.cover_image ? (
+                  <SmartImage
+                    src={room.cover_image}
+                    alt={`Room ${room?.room_number ?? ''}`}
+                    usage="card"
+                    aspectRatio="1 / 1"
+                    sizes="112px"
+                    wrapperClassName="h-full w-full"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-2xl text-muted-foreground">🖼</div>
+                )}
               </div>
-              <div>
-                <p className="text-sm font-bold text-foreground">Room {room?.room_number ?? '—'}</p>
-                <p className="text-xs text-muted-foreground mb-3">{room?.type ?? 'N/A'}</p>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-foreground">Room {room?.room_number ?? '—'}</p>
+                <p className="truncate text-xs text-muted-foreground mb-3">{room?.type ?? 'N/A'}</p>
                 <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
                   <span className="text-muted-foreground">Block</span>
                   <span className="font-medium">Block {room?.block}</span>
@@ -453,13 +552,13 @@ export default function TenantDashboard(): React.ReactElement {
               <p className="text-xs font-semibold text-foreground mb-3">My Lease Summary</p>
               <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
                 <span className="text-muted-foreground">Lease ID</span>
-                <span className="font-medium">{lease?.lease_number ?? '—'}</span>
+                <span className="min-w-0 break-words font-medium text-right">{lease?.lease_number ?? '—'}</span>
                 <span className="text-muted-foreground">Start Date</span>
-                <span>{lease?.start_date ? fmtDate(lease.start_date) : '—'}</span>
+                <span className="min-w-0 break-words text-right">{lease?.start_date ? fmtDate(lease.start_date) : '—'}</span>
                 <span className="text-muted-foreground">End Date</span>
-                <span>{lease?.end_date ? fmtDate(lease.end_date) : '—'}</span>
+                <span className="min-w-0 break-words text-right">{lease?.end_date ? fmtDate(lease.end_date) : '—'}</span>
                 <span className="text-muted-foreground">Days Remaining</span>
-                <span className="text-emerald-600 font-semibold">{lease?.days_remaining ?? 0} days</span>
+                <span className="min-w-0 break-words text-right font-semibold text-emerald-600">{lease?.days_remaining ?? 0} days</span>
               </div>
               <button
                 type="button"
@@ -472,7 +571,10 @@ export default function TenantDashboard(): React.ReactElement {
           </SectionCard>
         </div>
 
-        {/* ── AI Insights ───────────────────────────────────────────── */}
+        {/* ── AI Insights ───────────────────────────────────────────────────
+            Gradual rollout: hidden for tenants for now (AI is admin/superadmin
+            only until fully rolled out). See AI_INSIGHTS_ENABLED above. */}
+        {AI_INSIGHTS_ENABLED && (
         <div className="mt-5 rounded-2xl border border-violet-200/70 bg-gradient-to-br from-violet-50/80 to-indigo-50/60 p-5 dark:border-violet-500/20 dark:from-violet-950/30 dark:to-indigo-950/20">
           <div className="mb-4 flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-white">
@@ -525,6 +627,7 @@ export default function TenantDashboard(): React.ReactElement {
             </div>
           </div>
         </div>
+        )}
       </div>
     </>
   )

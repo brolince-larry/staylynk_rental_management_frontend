@@ -11,7 +11,7 @@ import { usePagination, useToast } from '@/hooks'
 import type { PaymentCredential, PaymentProvider } from '@/types'
 import { isApiError } from '@/utils/errors'
 import type { PaymentCredentialApproval } from '@/api/paymentCredentials'
-import { useOrganization, useOrganizations } from '../hooks/useOrganizations'
+import { useOrganizationProperties, useOrganizations } from '../hooks/useOrganizations'
 import {
   useCreatePaymentCredential,
   useDisablePaymentCredential,
@@ -21,7 +21,7 @@ import {
 
 const credentialSchema = z.object({
   org_id: z.string().min(1, 'Select an organisation'),
-  property_name: z.string().max(120, 'Property name is too long').optional(),
+  property_id: z.string().optional(),
   provider: z.enum(['mpesa', 'paypal']),
   environment: z.enum(['sandbox', 'production']),
   display_name: z.string().min(2, 'Display name is required').max(120),
@@ -37,7 +37,7 @@ type CredentialForm = z.infer<typeof credentialSchema>
 
 const DEFAULTS: CredentialForm = {
   org_id: '',
-  property_name: '',
+  property_id: '',
   provider: 'mpesa',
   environment: 'sandbox',
   display_name: '',
@@ -49,9 +49,9 @@ const DEFAULTS: CredentialForm = {
   is_active: true,
 }
 
-function propertyNameError(err: unknown): string | null {
+function propertyIdError(err: unknown): string | null {
   if (!isApiError(err) || !err.errors || Array.isArray(err.errors)) return null
-  return 'property_name' in err.errors ? 'Property not found in selected organization.' : null
+  return 'property_id' in err.errors ? 'Selected property does not belong to the selected organization.' : null
 }
 
 function approvalError(err: unknown): string | null {
@@ -78,20 +78,13 @@ function approvalDescription(approval: PaymentCredentialApproval): string {
   return `This credential will be applied after approval. Approval expires at ${formatted}.`
 }
 
-function propertyOptionsFrom(source: unknown): string[] {
-  const record = source as Record<string, unknown> | null | undefined
-  const candidates = [
-    record?.properties,
-    record?.data && (record.data as Record<string, unknown>).properties,
-  ]
-  const names = candidates.flatMap((candidate) => {
-    if (!Array.isArray(candidate)) return []
-    return candidate
-      .map((item) => typeof item === 'string' ? item : String((item as Record<string, unknown>)?.name ?? '').trim())
-      .filter(Boolean)
-  })
-
-  return Array.from(new Set(names))
+// email_sent can be false even on a successful request (e.g. the mail
+// server is unreachable) — show that as a warning instead of quietly
+// claiming an email went out, so a superadmin knows to follow up directly.
+function approvalToast(approval: PaymentCredentialApproval): { title: string; description: string } {
+  return approval.email_sent === false
+    ? { title: 'Saved — approval email could not be sent', description: `A superadmin will need to review this request directly. ${approvalDescription(approval)}` }
+    : { title: 'Approval email sent to superadmin.', description: approvalDescription(approval) }
 }
 
 export default function PaymentCredentials(): React.ReactElement {
@@ -120,12 +113,8 @@ export default function PaymentCredentials(): React.ReactElement {
     defaultValues: DEFAULTS,
   })
   const selectedOrgId = useWatch({ control: form.control, name: 'org_id' })
-  const { data: selectedOrg } = useOrganization(selectedOrgId || '')
-  const selectedOrgRow = orgs.find((org) => String(org.id) === selectedOrgId)
-  const propertyOptions = [
-    ...propertyOptionsFrom(selectedOrg),
-    ...propertyOptionsFrom(selectedOrgRow),
-  ].filter((name, index, list) => list.indexOf(name) === index)
+  const selectedPropertyId = useWatch({ control: form.control, name: 'property_id' })
+  const { data: orgProperties = [] } = useOrganizationProperties(selectedOrgId || '')
 
   useEffect(() => {
     if (!modalOpen) return
@@ -135,7 +124,7 @@ export default function PaymentCredentials(): React.ReactElement {
     }
     form.reset({
       org_id: String(editing.org?.id ?? ''),
-      property_name: editing.property?.name ?? editing.property_name ?? '',
+      property_id: editing.property?.id ?? '',
       provider: editing.provider,
       environment: editing.environment,
       display_name: editing.display_name,
@@ -155,10 +144,10 @@ export default function PaymentCredentials(): React.ReactElement {
   }
 
   const saveCredential = (values: CredentialForm) => {
-    const propertyName = values.property_name?.trim()
+    const propertyId = values.property_id || ''
     const createPayload = {
       org_id: values.org_id,
-      ...(propertyName ? { property_name: propertyName } : {}),
+      property_id: propertyId || null,
       provider: values.provider,
       environment: values.environment,
       display_name: values.display_name,
@@ -172,7 +161,7 @@ export default function PaymentCredentials(): React.ReactElement {
 
     if (editing) {
       const updatePayload = {
-        ...(propertyName ? { property_name: propertyName } : {}),
+        property_id: propertyId || null,
         display_name: values.display_name,
         callback_url: values.callback_url || null,
         is_active: values.is_active,
@@ -182,7 +171,8 @@ export default function PaymentCredentials(): React.ReactElement {
         onSuccess: (response) => {
           const approval = pendingApproval(response.data)
           if (approval) {
-            success('Approval email sent to superadmin.', approvalDescription(approval))
+            const { title, description } = approvalToast(approval)
+            ;(approval.email_sent === false ? warning : success)(title, description)
             closeModal()
             return
           }
@@ -190,8 +180,8 @@ export default function PaymentCredentials(): React.ReactElement {
           closeModal()
         },
         onError: (err) => {
-          const message = propertyNameError(err)
-          if (message) form.setError('property_name', { type: 'server', message })
+          const message = propertyIdError(err)
+          if (message) form.setError('property_id', { type: 'server', message })
           const approvalMessage = approvalError(err)
           if (approvalMessage) {
             warning(approvalMessage, 'Configure an active superadmin email before requesting approval.')
@@ -207,7 +197,8 @@ export default function PaymentCredentials(): React.ReactElement {
       onSuccess: (response) => {
         const approval = pendingApproval(response.data)
         if (approval) {
-          success('Approval email sent to superadmin.', approvalDescription(approval))
+          const { title, description } = approvalToast(approval)
+          ;(approval.email_sent === false ? warning : success)(title, description)
           closeModal()
           return
         }
@@ -215,8 +206,8 @@ export default function PaymentCredentials(): React.ReactElement {
         closeModal()
       },
       onError: (err) => {
-        const message = propertyNameError(err)
-        if (message) form.setError('property_name', { type: 'server', message })
+        const message = propertyIdError(err)
+        if (message) form.setError('property_id', { type: 'server', message })
         const approvalMessage = approvalError(err)
         if (approvalMessage) {
           warning(approvalMessage, 'Configure an active superadmin email before requesting approval.')
@@ -377,7 +368,7 @@ export default function PaymentCredentials(): React.ReactElement {
               value={selectedOrgId || ''}
               onChange={(event) => {
                 form.setValue('org_id', event.target.value, { shouldDirty: true, shouldValidate: true })
-                form.setValue('property_name', '', { shouldDirty: true, shouldValidate: true })
+                form.setValue('property_id', '', { shouldDirty: true, shouldValidate: true })
               }}
               onBlur={() => { void form.trigger('org_id') }}
               options={[
@@ -389,20 +380,20 @@ export default function PaymentCredentials(): React.ReactElement {
           <FormField
             label="Property"
             htmlFor="pc-property"
-            error={form.formState.errors.property_name?.message}
+            error={form.formState.errors.property_id?.message}
             hint="Leave blank to share across all properties"
           >
-            <Input
+            <Select
               id="pc-property"
-              list="pc-property-options"
-              placeholder={selectedOrgId ? 'Search or select property name' : 'Select organisation first'}
               disabled={!selectedOrgId}
-              error={!!form.formState.errors.property_name}
-              {...form.register('property_name')}
+              error={!!form.formState.errors.property_id}
+              value={selectedPropertyId || ''}
+              onChange={(event) => form.setValue('property_id', event.target.value, { shouldDirty: true, shouldValidate: true })}
+              options={[
+                { value: '', label: selectedOrgId ? 'Share across all properties' : 'Select organisation first' },
+                ...orgProperties.map((p) => ({ value: p.id, label: p.name })),
+              ]}
             />
-            <datalist id="pc-property-options">
-              {propertyOptions.map((name) => <option key={name} value={name} />)}
-            </datalist>
           </FormField>
           <FormField label="Provider" htmlFor="pc-provider" required>
             <Select

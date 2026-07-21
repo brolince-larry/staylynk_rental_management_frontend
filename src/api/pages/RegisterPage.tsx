@@ -218,12 +218,25 @@ export default function RegisterPage(): React.ReactElement {
                 </F>
               </div>
 
-              <p className="text-xs text-slate-600 px-1">
-                By creating an account you agree to our{' '}
-                <Link to="/terms" className="text-violet-400 hover:underline">Terms of Service</Link>
-                {' '}and{' '}
-                <Link to="/privacy" className="text-violet-400 hover:underline">Privacy Policy</Link>.
-              </p>
+              <div className="px-1">
+                <label htmlFor="terms_accepted" className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    id="terms_accepted"
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/20 bg-white/[0.06] text-violet-600 focus:ring-2 focus:ring-violet-500/40 focus:ring-offset-0"
+                    {...register('terms_accepted')}
+                  />
+                  <span className="text-xs text-slate-400">
+                    I have read and agree to the{' '}
+                    <Link to="/terms" target="_blank" className="text-violet-400 hover:underline">Terms of Service</Link>
+                    {' '}and{' '}
+                    <Link to="/privacy" target="_blank" className="text-violet-400 hover:underline">Privacy Policy</Link>.
+                  </span>
+                </label>
+                {errors.terms_accepted && (
+                  <p className="mt-1.5 text-xs text-red-400" role="alert">{errors.terms_accepted.message}</p>
+                )}
+              </div>
 
               <button
                 type="submit"

@@ -242,6 +242,7 @@ function ExpenseSummaryPanel({ summary, loading, month, filterPropId, onPrevMont
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function AdminExpenses(): React.ReactElement {
+  const currency = useAuthStore((s) => s.user?.org?.currency ?? 'KES')
   const [filterProp, setFilterProp]     = useState('')
   const [filterCat,  setFilterCat]      = useState('')
   const [from,       setFrom]           = useState('')
@@ -328,7 +329,7 @@ export default function AdminExpenses(): React.ReactElement {
     },
     {
       key: 'amount', header: 'Amount', align: 'right',
-      accessor: (row) => <span className="text-xs font-semibold text-foreground">{formatCurrency(row.amount as number)}</span>,
+      accessor: (row) => <span className="text-xs font-semibold text-foreground">{formatCurrency(row.amount as number, currency)}</span>,
     },
     {
       key: 'expense_date', header: 'Date',
@@ -399,7 +400,7 @@ export default function AdminExpenses(): React.ReactElement {
               {meta?.total ?? rows.length} expense{(meta?.total ?? rows.length) !== 1 ? 's' : ''} found
             </p>
             <p className="text-sm font-bold text-foreground">
-              Page total: {formatCurrency(pageTotal)}
+              Page total: {formatCurrency(pageTotal, currency)}
             </p>
           </div>
         )}

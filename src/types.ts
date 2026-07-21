@@ -16,6 +16,7 @@ export interface Organization {
   timezone?: string
   late_fee_pct?: number
   payment_due_day?: number
+  plan_intro_seen?: boolean
   [key: string]: unknown
 }
 
@@ -31,10 +32,14 @@ export interface AuthUser {
   dashboard: string
   org?: Organization | null
   current_property?: {
-    id: number
+    id?: number
     uuid: string
     name: string
     slug: string
+    city?: string | null
+    country?: string | null
+    cover_image?: Record<string, unknown> | null
+    banner_url?: string | null
     permissions?: string[] | Record<string, boolean>
   } | null
   permissions?: string[]

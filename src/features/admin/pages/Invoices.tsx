@@ -11,16 +11,18 @@ import { formatCurrency, formatDate, formatYearMonth, formatDatetime } from '@/u
 import { FileText, DollarSign, Clock, XCircle } from 'lucide-react'
 import { openSignedDocument } from '@/api/documentDownloads'
 import { paymentsApi } from '@/api/payments'
+import { useAuthStore } from '@/store/auth.store'
 
 type Invoice = Record<string, unknown>
 type Payment = Record<string, unknown>
 
 export default function InvoicesPage(): React.ReactElement {
+  const currency = useAuthStore((s) => s.user?.org?.currency ?? 'KES')
   const [activeTab, setActiveTab] = useState<'invoices' | 'bank_transfers'>('invoices')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [sort, setSort] = useState<SortState>({ column: 'created_at', direction: 'desc' })
-  const [voidId, setVoidId] = useState<number | null>(null)
+  const [voidId, setVoidId] = useState<string | null>(null)
   const [voidReason, setVoidReason] = useState('')
   const [genMonth, setGenMonth] = useState('')
   const [genOpen, setGenOpen] = useState(false)
@@ -34,7 +36,7 @@ export default function InvoicesPage(): React.ReactElement {
   const debouncedSearch = useDebounce(search, 400)
   const { toasts, success, error: toastError, dismiss } = useToast()
 
-  const downloadInvoice = (id: number) => {
+  const downloadInvoice = (id: string) => {
     void openSignedDocument(`/admin/invoices/${id}/download`, {
       onPending: (message) => success(message),
     }).catch((err) => toastError(err, 'Failed to download invoice'))
@@ -47,6 +49,7 @@ export default function InvoicesPage(): React.ReactElement {
   })
 
   const { data: btData, isLoading: btLoading } = usePayments({ method: 'bank_transfer', status: 'pending', page: btPage })
+  const { data: reviewedData, isLoading: reviewedLoading } = usePayments({ method: 'bank_transfer', status: 'completed', per_page: 5 })
   const { mutate: approveTransfer, isPending: approving } = useApproveBankTransfer()
   const { mutate: rejectTransfer, isPending: rejecting } = useRejectBankTransfer()
 
@@ -87,7 +90,7 @@ export default function InvoicesPage(): React.ReactElement {
     },
     {
       key: 'amount', header: 'Amount', align: 'right',
-      accessor: (row) => <span className="text-xs font-semibold text-foreground">{formatCurrency(row.amount as number)}</span>,
+      accessor: (row) => <span className="text-xs font-semibold text-foreground">{formatCurrency(row.amount as number, currency)}</span>,
     },
     {
       key: 'bank_reference', header: 'Bank Ref',
@@ -132,10 +135,46 @@ export default function InvoicesPage(): React.ReactElement {
     },
   ]
 
+  const reviewedColumns: ColumnDef<Payment>[] = [
+    {
+      key: 'tenant', header: 'Tenant',
+      accessor: (row) => {
+        const t = row.tenant as Record<string, string> | null
+        return t ? <div><p className="text-xs font-medium text-foreground">{t.name}</p></div>
+          : <span className="text-xs text-muted-foreground">—</span>
+      },
+    },
+    {
+      key: 'amount', header: 'Amount', align: 'right',
+      accessor: (row) => <span className="text-xs font-semibold text-foreground">{formatCurrency(row.amount as number, currency)}</span>,
+    },
+    {
+      key: 'payment_reference', header: 'Reference',
+      accessor: (row) => <span className="text-xs font-mono text-muted-foreground">{row.payment_reference as string}</span>,
+    },
+    {
+      key: 'approved_by', header: 'Approved By',
+      accessor: (row) => {
+        const by = row.received_by as Record<string, string> | null
+        return by ? (
+          <div>
+            <p className="text-xs font-medium text-foreground">{by.name}</p>
+            <p className="text-xs capitalize text-muted-foreground">{by.role ?? '—'}</p>
+          </div>
+        ) : <span className="text-xs text-muted-foreground">—</span>
+      },
+    },
+    {
+      key: 'paid_at', header: 'Approved',
+      accessor: (row) => <span className="text-xs text-muted-foreground whitespace-nowrap">{row.paid_at ? formatDatetime(row.paid_at as string) : '—'}</span>,
+    },
+  ]
+
   const list = data as Record<string, unknown> | undefined
   const rows = (list?.data as Invoice[]) ?? []
   const meta = list?.meta as { total: number; per_page: number; current_page: number; last_page: number } | undefined
   const sum = summary as Record<string, unknown> | undefined
+  const reviewedRows = ((reviewedData as Record<string, unknown> | undefined)?.data as Payment[]) ?? []
 
   const columns: ColumnDef<Invoice>[] = [
     {
@@ -174,7 +213,7 @@ export default function InvoicesPage(): React.ReactElement {
       sortable: true,
       align: 'right',
       accessor: (row) => (
-        <span className="text-xs font-medium text-foreground">{formatCurrency(row.total_amount as number)}</span>
+        <span className="text-xs font-medium text-foreground">{formatCurrency(row.total_amount as number, currency)}</span>
       ),
     },
     {
@@ -183,7 +222,7 @@ export default function InvoicesPage(): React.ReactElement {
       align: 'right',
       accessor: (row) => (
         <span className={`text-xs font-medium ${(row.paid_amount as number) >= (row.total_amount as number) ? 'text-emerald-600' : 'text-muted-foreground'}`}>
-          {formatCurrency(row.paid_amount as number)}
+          {formatCurrency(row.paid_amount as number, currency)}
         </span>
       ),
     },
@@ -209,7 +248,7 @@ export default function InvoicesPage(): React.ReactElement {
       header: '',
       width: 'w-32',
       accessor: (row) => {
-        const id = row.id as number
+        const id = row.id as string
         const status = row.status as string
         return (
           <div className="flex items-center gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
@@ -258,8 +297,8 @@ export default function InvoicesPage(): React.ReactElement {
         {/* Summary stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
           <StatCard label="Total Invoices" value={typeof sum?.total_count === 'number' || typeof sum?.total_count === 'string' ? sum.total_count : '—'} icon={<FileText className="h-4 w-4 text-violet-600" />} iconBg="bg-violet-100" />
-          <StatCard label="Total Amount" value={sum ? formatCurrency(sum.total_amount as number) : '—'} icon={<DollarSign className="h-4 w-4 text-emerald-600" />} iconBg="bg-emerald-100" />
-          <StatCard label="Pending" value={sum ? formatCurrency(sum.pending_amount as number) : '—'} icon={<Clock className="h-4 w-4 text-amber-600" />} iconBg="bg-amber-100" />
+          <StatCard label="Total Amount" value={sum ? formatCurrency(sum.total_amount as number, currency) : '—'} icon={<DollarSign className="h-4 w-4 text-emerald-600" />} iconBg="bg-emerald-100" />
+          <StatCard label="Pending" value={sum ? formatCurrency(sum.pending_amount as number, currency) : '—'} icon={<Clock className="h-4 w-4 text-amber-600" />} iconBg="bg-amber-100" />
           <StatCard label="Overdue" value={typeof sum?.overdue_count === 'number' || typeof sum?.overdue_count === 'string' ? sum.overdue_count : '—'} icon={<XCircle className="h-4 w-4 text-red-500" />} iconBg="bg-red-100" />
         </div>
 
@@ -337,6 +376,16 @@ export default function InvoicesPage(): React.ReactElement {
               pagination={btMeta} onPageChange={setBtPage}
               caption="Bank transfer review queue"
             />
+
+            <div className="mt-8">
+              <h3 className="mb-3 text-sm font-semibold text-foreground">Recently Approved</h3>
+              <DataTable
+                columns={reviewedColumns} data={reviewedRows} keyField="id"
+                loading={reviewedLoading}
+                emptyTitle="No approved transfers yet"
+                caption="Recently approved bank transfers"
+              />
+            </div>
           </>
         )}
       </div>

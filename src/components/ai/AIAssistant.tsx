@@ -46,6 +46,7 @@ import { useAIStore } from '@/store/ai.store'
 import { aiApi, aiPaymentApi, sendAIMessage, getHunterSession, type AIVisual, type AIAction, type AIChatContext, type AIChatMeta, type AIMediaItem, type ActionIntent, type AITable } from '@/api/ai'
 import { apiPost } from '@/api/client'
 import { useAuthStore } from '@/store/auth.store'
+import { useBodyScrollLock } from '@/hooks'
 import { getErrorMessage, isApiError } from '@/utils/errors'
 import aiOrb from '@/assets/ai-orb.png'
 
@@ -100,6 +101,46 @@ function getActionSteps(type: string): string[] {
     case 'maintenance':      return ['Analyzing request', 'Locating room', 'Saving maintenance request']
     case 'publish_listing':  return ['Finding property', 'Preparing listing data', 'Publishing to house hunters board']
     default:                 return ['Analyzing your request', 'Processing', 'Finalizing']
+  }
+}
+
+// Read-only queries never touch detectActionCommand() (that's for write/action
+// commands only), but the user still deserves to see *what* the AI is doing
+// instead of a generic spinner — mirrors each real backend tool's actual work
+// so the wait feels transparent, Claude-Code-style, rather than a black box.
+// Falls back to GENERIC_TOPIC for anything that doesn't match a known
+// category, so the checklist becomes the default experience for every
+// message, not just the ones we can specifically identify.
+const GENERIC_TOPIC = 'generic'
+
+function detectQueryTopic(msg: string): string {
+  const m = msg.toLowerCase()
+  if (/\b(convince|why (should|pay|use)|worth (it|paying)|benefit|roi|value|justify|stick (with|to)|keep (using|paying))\b/.test(m)) return 'value_pitch'
+  if (/\b(hasn'?t paid|not paid|overdue|arrears|rent collection|who owes|collection rate|malipo)\b/.test(m)) return 'rent_collection'
+  if (/\b(vacan(t|cy)|occupan(cy|t)|empty room|available room)\b/.test(m)) return 'occupancy'
+  if (/\b(revenue|income|profit|net operating|financial summary|how much money|mapato|faida)\b/.test(m)) return 'financial_summary'
+  if (/\b(my portfolio|business (doing|performance)|overview|executive|full report|dashboard|hali ya biashara)\b/.test(m)) return 'executive_dashboard'
+  if (/\b(tenants?|wapangishaji)\b.*\b(list|who|active)\b|\bmy tenants\b/.test(m)) return 'tenant_list'
+  if (/\b(expense|spending|cost|matumizi)\b/.test(m)) return 'expense_report'
+  if (/\b(lease expir|upcoming vacan|forecast|tenants? leaving)\b/.test(m)) return 'vacancy_forecast'
+  if (/\b(compare|market|competitor|rent too (high|low)|competitive|nearby (rent|listings))\b/.test(m)) return 'market_advice'
+  if (/\b(maintenance|repair|broken|fault|matengenezo)\b/.test(m)) return 'maintenance_status'
+  return GENERIC_TOPIC
+}
+
+// Topics whose real backend responses typically come back with charts/visuals
+// attached — for these, the chart-shaped skeleton loader is the more honest
+// "what's coming" preview than a text checklist. Everything else gets the
+// step-by-step checklist.
+const CHART_TOPICS = new Set(['rent_collection', 'occupancy', 'financial_summary', 'executive_dashboard', 'vacancy_forecast', 'maintenance_status'])
+
+function getQueryTopicSteps(topic: string): string[] {
+  switch (topic) {
+    case 'value_pitch':    return ['Reviewing your payment history', 'Calculating time & money saved', 'Checking fraud protection', 'Writing your personalised answer']
+    case 'tenant_list':    return ['Loading your tenants', 'Checking lease status']
+    case 'expense_report': return ['Pulling expense records', 'Grouping by category']
+    case 'market_advice':  return ['Checking your property details', 'Researching nearby listings', 'Comparing market rates']
+    default:                return ['Understanding your question', 'Checking your data', 'Preparing your answer']
   }
 }
 
@@ -245,8 +286,12 @@ export default function AIAssistant({ role, variant = 'orb' }: Props): React.Rea
     setSubmitting(true)
     setLoading(true)
     const actionKind = detectActionCommand(message)
-    if (actionKind) {
-      const steps = getActionSteps(actionKind)
+    const queryTopic = actionKind ? null : detectQueryTopic(message)
+    // Chart-producing topics use the chart-shaped skeleton loader instead —
+    // taskProgress stays null so the render falls through to that branch.
+    const useChecklist = actionKind !== null || (queryTopic !== null && !CHART_TOPICS.has(queryTopic))
+    if (useChecklist) {
+      const steps = actionKind ? getActionSteps(actionKind) : getQueryTopicSteps(queryTopic as string)
       setTaskProgress({ steps, completed: 0 })
       let stepIdx = 0
       taskStepTimer.current = window.setInterval(() => {
@@ -257,7 +302,7 @@ export default function AIAssistant({ role, variant = 'orb' }: Props): React.Rea
           window.clearInterval(taskStepTimer.current!)
           taskStepTimer.current = null
         }
-      }, 700)
+      }, 450)
     }
     try {
       let activeToken = sessionToken
@@ -294,7 +339,7 @@ export default function AIAssistant({ role, variant = 'orb' }: Props): React.Rea
         const modelCircuitOpen = meta.safety?.model_circuit_open === true
         const shouldType = presentation?.typing !== false
         const shouldShowThinkingOrb = presentation?.thinking_orb === true && !modelCircuitOpen
-        const typingSpeedMs = presentation?.typing_speed_ms ?? 24
+        const typingSpeedMs = presentation?.typing_speed_ms ?? 4
         const media = res.data.media
         const actionIntent = res.data.action_intent
         const actionType = res.data.action_type ?? null
@@ -571,7 +616,7 @@ export default function AIAssistant({ role, variant = 'orb' }: Props): React.Rea
 
         {/* Messages area */}
         <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-4 py-5">
+          <div className="mx-auto max-w-4xl px-4 py-5">
             {/* No property assigned — manager onboarding state */}
             {managerHasNoProperty && (
               <div className="mx-auto flex max-w-md flex-col items-center gap-4 py-10 text-center">
@@ -901,7 +946,7 @@ export default function AIAssistant({ role, variant = 'orb' }: Props): React.Rea
 
         {/* Input bar */}
         <div className="shrink-0 border-t border-border bg-card px-4 pb-[5.5rem] pt-3 lg:pb-4">
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto max-w-4xl">
             {/* Quick action chips */}
             {(QUICK_CHIPS[role] ?? []).length > 0 && (
               <div className="mb-2.5 flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
@@ -1394,6 +1439,11 @@ function findPreviousUserMessage(messages: Array<{ role: string; content: string
   return undefined
 }
 
+// Reveals the whole message in a fixed number of ticks so total animation time stays
+// roughly constant (well under a quarter-second) no matter how long the response is —
+// a per-word delay alone drags out badly on long messages, however small the delay.
+const TYPE_TOTAL_TICKS = 10
+
 function typeWords(
   text: string,
   speedMs: number,
@@ -1408,15 +1458,17 @@ function typeWords(
     return () => undefined
   }
 
+  const wordsPerTick = Math.max(1, Math.ceil(words.length / TYPE_TOTAL_TICKS))
+
   const timer = window.setInterval(() => {
-    index += 1
+    index += wordsPerTick
     onUpdate(words.slice(0, index).join(' '))
 
     if (index >= words.length) {
       window.clearInterval(timer)
       onDone?.()
     }
-  }, Math.max(8, speedMs))
+  }, Math.max(4, speedMs))
 
   return () => window.clearInterval(timer)
 }
@@ -2206,6 +2258,8 @@ function AIMediaLightbox({
   const total = items.length
   const stripRef = useRef<HTMLDivElement>(null)
 
+  useBodyScrollLock(true)
+
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -2377,6 +2431,8 @@ function AIDashboardPanel({
   const maintenance = (payload.maintenance ?? {}) as { open_total?: number; urgent?: number; high?: number }
   const overdue = (payload.overdue ?? {}) as { count?: number; total_balance?: number }
   const properties = (payload.properties ?? []) as Array<Record<string, unknown>>
+
+  useBodyScrollLock(true)
 
   const occupancyRate = Math.min(100, Number(portfolio.occupancy_rate ?? 0))
   const collectionRate = Math.min(100, Number(revenue.collection_rate ?? 0))

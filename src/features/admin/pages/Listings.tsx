@@ -11,6 +11,7 @@ import { Button, FilterBar, FormField, Input, Modal, Select, Textarea, ToastCont
 import { PageHeader, StatusBadge, StatCard } from '@/components/ui'
 import { usePagination, useToast } from '@/hooks'
 import { formatCurrency, formatDate } from '@/utils/format'
+import { useAuthStore } from '@/store/auth.store'
 import { propertiesApi } from '@/api/properties'
 import { useQuery } from '@tanstack/react-query'
 import { PROPERTY_TYPE_OPTIONS, type ListingHouseType, type PublicListing } from '@/api/listings'
@@ -192,6 +193,7 @@ function VerificationGate({ block, onDismiss }: { block: VerificationBlock; onDi
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Listings(): React.ReactElement {
+  const currency = useAuthStore((s) => s.user?.org?.currency ?? 'KES')
   const [status, setStatus] = useState('')
   const [houseType, setHouseType] = useState<ListingHouseType | ''>('')
   const [publishOpen, setPublishOpen] = useState(false)
@@ -260,7 +262,7 @@ export default function Listings(): React.ReactElement {
     },
     {
       key: 'rent', header: 'Rent',
-      accessor: (row) => <span className="text-xs text-muted-foreground">{formatCurrency(row.rent_min ?? 0)} - {formatCurrency(row.rent_max ?? 0)}</span>,
+      accessor: (row) => <span className="text-xs text-muted-foreground">{formatCurrency(row.rent_min ?? 0, currency)} - {formatCurrency(row.rent_max ?? 0, currency)}</span>,
     },
     {
       key: 'verification_status', header: 'Trust',
@@ -281,17 +283,45 @@ export default function Listings(): React.ReactElement {
       accessor: (row) => <span className="text-xs text-muted-foreground">{row.published_at ? formatDate(row.published_at) : '—'}</span>,
     },
     {
-      key: 'actions', header: '', width: 'w-56',
+      key: 'actions', header: '', width: 'w-64',
       accessor: (row) => (
         <div className="flex flex-wrap justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => sync(row.uuid, { onSuccess: () => success('Listing synced'), onError: (err) => toastError(err, 'Failed to sync listing') })} className="rounded px-2 py-1 text-xs text-primary hover:bg-primary/10">
+          {!row.is_published && (
+            <button
+              onClick={() => {
+                const propertyUuid = row.property?.uuid
+                if (!propertyUuid) { toastError(null, 'This listing has no linked property — republish from the Publish Property button instead.'); return }
+                publish({ propertyId: propertyUuid as unknown as number, data: {} }, {
+                  onSuccess: () => success('Listing published'),
+                  onError: (err) => handleLockedError(err, 'Failed to publish listing'),
+                })
+              }}
+              title="Make this listing visible to house hunters again, using the property's current details."
+              className="rounded px-2 py-1 text-xs font-medium text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+            >
+              Publish
+            </button>
+          )}
+          <button
+            onClick={() => sync(row.uuid, { onSuccess: () => success('Listing synced'), onError: (err) => toastError(err, 'Failed to sync listing') })}
+            title="Refresh available units, rent range and photos from your current rooms — do this after adding/editing rooms."
+            className="rounded px-2 py-1 text-xs text-primary hover:bg-primary/10"
+          >
             Sync
           </button>
-          <button onClick={() => feature({ uuid: row.uuid, featured: !row.is_featured }, { onSuccess: () => success(row.is_featured ? 'Feature removed' : 'Listing featured'), onError: (err) => toastError(err, 'Failed to update feature') })} className="rounded px-2 py-1 text-xs text-amber-600 hover:bg-amber-50">
+          <button
+            onClick={() => feature({ uuid: row.uuid, featured: !row.is_featured }, { onSuccess: () => success(row.is_featured ? 'Feature removed' : 'Listing featured'), onError: (err) => toastError(err, 'Failed to update feature') })}
+            title="Boost this listing's ranking on the public search page."
+            className="rounded px-2 py-1 text-xs text-amber-600 hover:bg-amber-50"
+          >
             {row.is_featured ? 'Unfeature' : 'Feature'}
           </button>
           {row.is_published ? (
-            <button onClick={() => unpublish(row.uuid, { onSuccess: () => success('Listing unpublished'), onError: (err) => toastError(err, 'Failed to unpublish') })} className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50">
+            <button
+              onClick={() => unpublish(row.uuid, { onSuccess: () => success('Listing unpublished'), onError: (err) => toastError(err, 'Failed to unpublish') })}
+              title="Remove this listing from public search. Room and tenant data is untouched."
+              className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50"
+            >
               Unpublish
             </button>
           ) : null}
@@ -339,6 +369,22 @@ export default function Listings(): React.ReactElement {
           <StatCard label="Listings" value={meta?.total ?? rows.length} icon={<Eye className="h-4 w-4 text-blue-600" />} iconBg="bg-blue-100" loading={isLoading} />
           <StatCard label="Featured on Page" value={rows.filter((row) => row.is_featured).length} icon={<Star className="h-4 w-4 text-amber-600" />} iconBg="bg-amber-100" loading={isLoading} />
           <StatCard label="Available on Page" value={rows.filter((row) => row.is_available).length} icon={<RefreshCw className="h-4 w-4 text-emerald-600" />} iconBg="bg-emerald-100" loading={isLoading} />
+        </div>
+
+        {/* ── Row action guidance ── */}
+        <div className="mb-5 grid grid-cols-1 gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 sm:grid-cols-3">
+          <div className="flex items-start gap-2">
+            <Send className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+            <p className="text-xs text-muted-foreground"><span className="font-semibold text-foreground">Publish</span> makes an unpublished listing visible to house hunters again, using your property's current details.</p>
+          </div>
+          <div className="flex items-start gap-2">
+            <RefreshCw className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+            <p className="text-xs text-muted-foreground"><span className="font-semibold text-foreground">Sync</span> refreshes available units, rent range and photos — run it after adding, editing or filling rooms.</p>
+          </div>
+          <div className="flex items-start gap-2">
+            <Star className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+            <p className="text-xs text-muted-foreground"><span className="font-semibold text-foreground">Feature</span> boosts a listing's ranking on the public search page.</p>
+          </div>
         </div>
 
         <FilterBar>

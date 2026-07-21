@@ -1,5 +1,5 @@
 // src/features/superadmin/pages/Security.tsx
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { toast } from 'sonner'
 import {
@@ -15,8 +15,8 @@ import { DataTable, type ColumnDef } from '@/components/tables/DataTable'
 import { FilterBar, SearchInput, Select, Modal, Button, FormField, Input } from '@/components/forms'
 import { PageHeader, SectionCard } from '@/components/ui'
 import { formatDatetime, formatRelative } from '@/utils/format'
-import { useDebounce, usePagination, useToast } from '@/hooks'
-import { getEcho } from '@/lib/echo'
+import { useBodyScrollLock, useDebounce, usePagination, useToast } from '@/hooks'
+import { useRealtime } from '@/providers/realtimeContext'
 import { useAuthStore } from '@/store/auth.store'
 import type { SecurityEvent, BruteForceEntry, RiskyUser, CategoryStat, HeatmapCell, TraceEventData } from '@/api/security'
 import { AlertTriangle, Loader2, Mail, MapPin, Monitor, Search, ShieldAlert, ShieldOff, UserX, Wifi, RefreshCw } from 'lucide-react'
@@ -150,7 +150,9 @@ function AttackerIntelModal({
   const { data, isLoading, isError } = useTraceSecurityEvent(eventId)
   const { mutate: blockIP,  isPending: blocking  } = useBlockIP()
   const { mutate: suspend,  isPending: suspending } = useSuspendUser()
-  const { toasts, success, error: toastErr, dismiss } = useToast()
+  const { toasts, success, error: toastErr } = useToast()
+
+  useBodyScrollLock(eventId !== null)
 
   if (!eventId) return null
 
@@ -383,18 +385,13 @@ function ThreatsTab(): React.ReactElement {
   const { data, isLoading, refetch, isFetching } = useSecurityThreats()
   const { mutate: resolve, isPending: resolving } = useResolveSecurityEvent()
   const { token } = useAuthStore()
+  const { subscribePrivate } = useRealtime()
   const [traceId, setTraceId] = useState<number | null>(null)
   const [live, setLive] = useState<LiveEvent[]>([])
-  const channelRef = useRef<{ stopListening: (event: string) => void } | null>(null)
 
   useEffect(() => {
     if (!token) return
-    const echo = getEcho(token)
-    if (!echo) return
-    const channel = echo.private('security.alerts')
-    channelRef.current = channel as typeof channelRef.current
-
-    channel.listen('.threat.detected', (event: LiveEvent) => {
+    return subscribePrivate<LiveEvent>('security.alerts', '.threat.detected', (event) => {
       setLive((prev) => [event, ...prev].slice(0, 50))
 
       if (event.level === 'critical') {
@@ -408,11 +405,7 @@ function ThreatsTab(): React.ReactElement {
         })
       }
     })
-
-    return () => {
-      channelRef.current?.stopListening('.threat.detected')
-    }
-  }, [token])
+  }, [token, subscribePrivate])
 
   const rows = (data?.data ?? []) as SecurityEvent[]
 

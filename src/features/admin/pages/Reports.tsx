@@ -4,15 +4,16 @@ import { Helmet } from 'react-helmet-async'
 import { Download } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { apiGet } from '@/api/client'
-import { apiBaseUrl } from '@/config/env'
+import { openSignedDocument } from '@/api/documentDownloads'
 import { useAuthStore } from '@/store/auth.store'
+import { useToast } from '@/hooks'
 import { QK } from '@/constants/queryKeys'
 import { DateRangePicker } from '@/components/forms/DateRangePicker'
 import { PageHeader, SectionCard, StatCard } from '@/components/ui'
 import { OccupancyChart, RevenueDonut } from '@/components/charts'
-import { Button } from '@/components/forms'
+import { Button, ToastContainer } from '@/components/forms'
 import { formatCurrency, formatPercent } from '@/utils/format'
-import { format, subDays } from 'date-fns'
+import { format, startOfYear } from 'date-fns'
 import { DollarSign, TrendingUp, BedDouble, FileText } from 'lucide-react'
 
 export default function Reports(): React.ReactElement {
@@ -20,8 +21,19 @@ export default function Reports(): React.ReactElement {
   const orgId = user?.org?.id?.toString() ?? 'unknown'
   const currency = user?.org?.currency ?? 'USD'
 
-  const [from, setFrom] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'))
+  // Default to calendar year-to-date so real invoice/occupancy history
+  // (which may span several months back) shows up on first load, instead
+  // of a narrow rolling 30-day window that can land entirely outside
+  // where the data actually is.
+  const [from, setFrom] = useState(format(startOfYear(new Date()), 'yyyy-MM-dd'))
   const [to,   setTo]   = useState(format(new Date(), 'yyyy-MM-dd'))
+  const { toasts, success, error: toastError, dismiss } = useToast()
+
+  const exportRevenueReport = () => {
+    void openSignedDocument(`/admin/reports/export?type=revenue&month=${from.slice(0, 7)}`, {
+      onPending: (message) => success(message),
+    }).catch((err) => toastError(err, 'Failed to export report'))
+  }
 
   const { data: revData, isLoading: revLoading } = useQuery({
     queryKey: QK.reports(orgId, 'revenue', { from, to }),
@@ -45,6 +57,7 @@ export default function Reports(): React.ReactElement {
   return (
     <>
       <Helmet><title>Reports — StayLynk</title></Helmet>
+      <ToastContainer toasts={toasts} dismiss={dismiss} />
       <div className="p-6 max-w-[1400px]">
         <PageHeader
           title="Reports"
@@ -52,11 +65,9 @@ export default function Reports(): React.ReactElement {
           actions={
             <div className="flex items-center gap-2">
               <DateRangePicker from={from} to={to} onFromChange={setFrom} onToChange={setTo} showPresets />
-              <a href={`${apiBaseUrl}/admin/reports/export?from=${from}&to=${to}`} target="_blank" rel="noopener noreferrer">
-                <Button variant="outline" size="sm">
-                  <Download className="h-3.5 w-3.5" /> Export
-                </Button>
-              </a>
+              <Button variant="outline" size="sm" onClick={exportRevenueReport}>
+                <Download className="h-3.5 w-3.5" /> Export
+              </Button>
             </div>
           }
         />

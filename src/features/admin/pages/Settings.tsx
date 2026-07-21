@@ -4,17 +4,21 @@ import { Helmet } from 'react-helmet-async'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useOrgSettings, useUpdateOrgSettings } from '../hooks/index'
+import {
+  useOrgSettings, useUpdateOrgSettings, usePropertyOptions,
+  useBankAccounts, useCreateBankAccount, useUpdateBankAccount, useDeleteBankAccount,
+} from '../hooks/index'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { tenantsApi } from '@/api/tenants'
+import type { BankAccount, BankAccountInput } from '@/api/bankAccounts'
 import { useToast } from '@/hooks'
 import { PageHeader, SectionCard } from '@/components/ui'
-import { Button, FormField, Input, Select, Textarea, ToastContainer } from '@/components/forms'
+import { Button, FormField, Input, Select, Textarea, ToastContainer, Modal, ConfirmDialog } from '@/components/forms'
 import { MediaUploadField } from '@/components/media'
 import { mediaService } from '@/services/media'
 import { useAuthStore } from '@/store/auth.store'
 import { authApi } from '@/api/auth'
-import { AlertTriangle, Building2, Camera, ImageIcon } from 'lucide-react'
+import { AlertTriangle, Building2, Camera, ImageIcon, Plus, Pencil, Trash2, Landmark } from 'lucide-react'
 
 const settingsSchema = z.object({
   name:          z.string().min(2),
@@ -37,6 +41,8 @@ const bankAccountSchema = z.object({
   branch:         z.string().optional(),
   swift_code:     z.string().optional(),
   instructions:   z.string().optional(),
+  applies_to_all_properties: z.boolean().default(true),
+  property_uuids: z.array(z.string()).default([]),
 })
 type BankAccountForm = z.infer<typeof bankAccountSchema>
 
@@ -73,23 +79,48 @@ export default function Settings(): React.ReactElement {
   const [coverFiles, setCoverFiles] = useState<File[]>([])
   const [coverPreview, setCoverPreview] = useState<string | null>(null)
   const [uploadingCover, setUploadingCover] = useState(false)
-  const [savingBank, setSavingBank] = useState(false)
+  const [bankModalOpen, setBankModalOpen] = useState(false)
+  const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null)
+  const [deletingAccount, setDeletingAccount] = useState<BankAccount | null>(null)
   const [penaltyEnabled, setPenaltyEnabled] = useState(false)
   const [penaltyType, setPenaltyType] = useState<'daily' | 'monthly'>('monthly')
   const [penaltyAmount, setPenaltyAmount] = useState('')
   const [penaltyGraceDays, setPenaltyGraceDays] = useState('0')
+  const [penaltyPropertyUuid, setPenaltyPropertyUuid] = useState('')
+  const [penaltyApplyToAll, setPenaltyApplyToAll] = useState(false)
   const coverInputRef = useRef<HTMLInputElement>(null)
   const { data: settingsData, isLoading } = useOrgSettings()
   const { mutate: updateSettings, isPending: saving } = useUpdateOrgSettings()
+  const { data: propertiesData } = usePropertyOptions()
+  const properties = Array.isArray(propertiesData) ? propertiesData : []
+  const { data: bankAccounts, isLoading: loadingBankAccounts } = useBankAccounts()
+  const { mutate: createBankAccount, isPending: creatingBankAccount } = useCreateBankAccount()
+  const { mutate: updateBankAccount, isPending: updatingBankAccount } = useUpdateBankAccount()
+  const { mutate: deleteBankAccount, isPending: deletingBankAccount } = useDeleteBankAccount()
+
+  // Default the penalty section's own property picker to whatever property
+  // is currently active in the top bar, once it's known.
+  useEffect(() => {
+    if (currentProperty?.uuid && !penaltyPropertyUuid) setPenaltyPropertyUuid(currentProperty.uuid)
+  }, [currentProperty?.uuid, penaltyPropertyUuid])
 
   const { mutate: savePenalty, isPending: savingPenalty } = useMutation({
-    mutationFn: () => tenantsApi.updatePropertyPenalty(currentProperty?.uuid as string, {
-      penalty_enabled: penaltyEnabled,
-      penalty_type: penaltyType,
-      penalty_amount: parseFloat(penaltyAmount) || 0,
-      penalty_grace_days: parseInt(penaltyGraceDays) || 0,
-    }),
-    onSuccess: () => { success('Penalty settings saved'); void qc.invalidateQueries({ queryKey: ['admin', 'org-settings'] }) },
+    mutationFn: () => {
+      const payload = {
+        penalty_enabled: penaltyEnabled,
+        penalty_type: penaltyType,
+        penalty_amount: parseFloat(penaltyAmount) || 0,
+        penalty_grace_days: parseInt(penaltyGraceDays) || 0,
+      }
+      if (penaltyApplyToAll) {
+        return Promise.all(properties.map((p) => tenantsApi.updatePropertyPenalty(p.uuid, payload)))
+      }
+      return tenantsApi.updatePropertyPenalty(penaltyPropertyUuid, payload)
+    },
+    onSuccess: () => {
+      success(penaltyApplyToAll ? `Penalty settings saved for ${properties.length} propert${properties.length === 1 ? 'y' : 'ies'}` : 'Penalty settings saved')
+      void qc.invalidateQueries({ queryKey: ['admin', 'org-settings'] })
+    },
     onError: (err) => toastError(err, 'Failed to save penalty settings'),
   })
 
@@ -100,8 +131,9 @@ export default function Settings(): React.ReactElement {
 
   const bankForm = useForm<BankAccountForm>({
     resolver: zodResolver(bankAccountSchema) as Resolver<BankAccountForm>,
-    defaultValues: { bank_name: '', account_name: '', account_number: '', branch: '', swift_code: '', instructions: '' },
+    defaultValues: { bank_name: '', account_name: '', account_number: '', branch: '', swift_code: '', instructions: '', applies_to_all_properties: true, property_uuids: [] },
   })
+  const appliesToAll = bankForm.watch('applies_to_all_properties')
 
   // Populate form when data loads
   useEffect(() => {
@@ -125,30 +157,50 @@ export default function Settings(): React.ReactElement {
       late_fee_pct:    numberValue(orgSettings, ['late_fee_pct', 'late_fee_percentage'], 0),
       payment_due_day: numberValue(orgSettings, ['payment_due_day'], 1),
     })
+  }, [settingsData, user?.org, form])
 
-    // Bank account is nested in org.settings.bank_account
-    const ba = orgSettings?.bank_account as Record<string, unknown> | null | undefined
-    if (ba) {
-      bankForm.reset({
-        bank_name:      textValue(ba, ['bank_name']),
-        account_name:   textValue(ba, ['account_name']),
-        account_number: textValue(ba, ['account_number']),
-        branch:         textValue(ba, ['branch']),
-        swift_code:     textValue(ba, ['swift_code']),
-        instructions:   textValue(ba, ['instructions']),
-      })
+  const openAddBankAccount = () => {
+    setEditingAccount(null)
+    bankForm.reset({ bank_name: '', account_name: '', account_number: '', branch: '', swift_code: '', instructions: '', applies_to_all_properties: true, property_uuids: [] })
+    setBankModalOpen(true)
+  }
+
+  const openEditBankAccount = (account: BankAccount) => {
+    setEditingAccount(account)
+    bankForm.reset({
+      bank_name: account.bank_name,
+      account_name: account.account_name,
+      account_number: account.account_number,
+      branch: account.branch ?? '',
+      swift_code: account.swift_code ?? '',
+      instructions: account.instructions ?? '',
+      applies_to_all_properties: account.applies_to_all_properties,
+      property_uuids: account.properties.map(p => p.id),
+    })
+    setBankModalOpen(true)
+  }
+
+  const handleSaveBankAccount = (values: BankAccountForm) => {
+    const payload: BankAccountInput = {
+      ...values,
+      property_uuids: values.applies_to_all_properties ? [] : values.property_uuids,
     }
-  }, [settingsData, user?.org, form, bankForm])
+    const onSuccess = () => { success(editingAccount ? 'Bank account updated' : 'Bank account added'); setBankModalOpen(false) }
+    const onError = (err: unknown) => toastError(err, 'Failed to save bank account')
 
-  const handleSaveBank = (values: BankAccountForm) => {
-    setSavingBank(true)
-    updateSettings(
-      { bank_account: values } as unknown as Parameters<typeof updateSettings>[0],
-      {
-        onSuccess: () => { success('Bank account saved'); setSavingBank(false) },
-        onError:   (err) => { toastError(err, 'Failed to save bank account'); setSavingBank(false) },
-      }
-    )
+    if (editingAccount) {
+      updateBankAccount({ id: editingAccount.id, data: payload }, { onSuccess, onError })
+    } else {
+      createBankAccount(payload, { onSuccess, onError })
+    }
+  }
+
+  const handleDeleteBankAccount = () => {
+    if (!deletingAccount) return
+    deleteBankAccount(deletingAccount.id, {
+      onSuccess: () => { success('Bank account removed'); setDeletingAccount(null) },
+      onError: (err) => { toastError(err, 'Failed to remove bank account'); setDeletingAccount(null) },
+    })
   }
 
   const handleSave = (values: SettingsForm) => {
@@ -387,62 +439,205 @@ export default function Settings(): React.ReactElement {
             </div>
           </SectionCard>
 
-          {/* Bank Account */}
+          {/* Bank Accounts */}
           <SectionCard
-            title="Bank Account"
+            title="Bank Accounts"
             action={
-              <Button size="sm" loading={savingBank} onClick={bankForm.handleSubmit(handleSaveBank)}>
-                Save Bank Account
+              <Button size="sm" onClick={openAddBankAccount}>
+                <Plus className="h-3.5 w-3.5" /> Add Bank Account
               </Button>
             }
           >
             <div className="mb-4 flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 px-4 py-3">
               <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
               <p className="text-xs text-blue-700 dark:text-blue-300">
-                Tenants will see this account when they choose "Bank Transfer" as their payment method. Leave blank to disable bank transfer for this organisation.
+                Add one bank account per property, or share one account across several. Tenants paying by bank transfer see the account attached to their own property, so they always pay into the correct one.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <FormField label="Bank Name" htmlFor="ba-bank" error={bankForm.formState.errors.bank_name?.message} required>
-                <Input id="ba-bank" placeholder="e.g. Equity Bank Kenya" error={!!bankForm.formState.errors.bank_name} {...bankForm.register('bank_name')} />
-              </FormField>
-              <FormField label="Account Name" htmlFor="ba-aname" error={bankForm.formState.errors.account_name?.message} required>
-                <Input id="ba-aname" placeholder="e.g. Green View Properties Ltd" error={!!bankForm.formState.errors.account_name} {...bankForm.register('account_name')} />
-              </FormField>
-              <FormField label="Account Number" htmlFor="ba-anum" error={bankForm.formState.errors.account_number?.message} required>
-                <Input id="ba-anum" placeholder="e.g. 0123456789" error={!!bankForm.formState.errors.account_number} {...bankForm.register('account_number')} />
-              </FormField>
-              <FormField label="Branch" htmlFor="ba-branch" hint="Optional">
-                <Input id="ba-branch" placeholder="e.g. Westlands, Nairobi" {...bankForm.register('branch')} />
-              </FormField>
-              <FormField label="SWIFT / BIC Code" htmlFor="ba-swift" hint="For international transfers">
-                <Input id="ba-swift" placeholder="e.g. EQBLKENAXXX" {...bankForm.register('swift_code')} />
-              </FormField>
-              <FormField label="Transfer Instructions" htmlFor="ba-instructions" hint="Shown to tenants" className="col-span-2">
-                <Textarea id="ba-instructions" rows={2} placeholder="e.g. Use your invoice number as the payment reference." {...bankForm.register('instructions')} />
-              </FormField>
-            </div>
+
+            {loadingBankAccounts ? (
+              <p className="text-xs text-muted-foreground">Loading bank accounts…</p>
+            ) : !bankAccounts || bankAccounts.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No bank accounts yet. Add one so tenants can pay by bank transfer.</p>
+            ) : (
+              <div className="space-y-3">
+                {bankAccounts.map((account) => (
+                  <div key={account.id} className="rounded-xl border border-border p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{account.bank_name} — {account.account_name}</p>
+                          <p className="text-xs text-muted-foreground">Acc. No. {account.account_number}{account.branch ? ` · ${account.branch}` : ''}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {account.applies_to_all_properties
+                              ? 'Applies to all properties'
+                              : account.properties.length > 0
+                                ? `Properties: ${account.properties.map(p => p.name).join(', ')}`
+                                : 'No properties selected — tenants will not see this account'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openEditBankAccount(account)}
+                          className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          aria-label="Edit bank account"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeletingAccount(account)}
+                          className="rounded p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30"
+                          aria-label="Delete bank account"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </SectionCard>
+
+          <Modal
+            open={bankModalOpen}
+            onClose={() => setBankModalOpen(false)}
+            title={editingAccount ? 'Edit Bank Account' : 'Add Bank Account'}
+            footer={
+              <>
+                <Button variant="outline" onClick={() => setBankModalOpen(false)}>Cancel</Button>
+                <Button
+                  loading={creatingBankAccount || updatingBankAccount}
+                  onClick={bankForm.handleSubmit(handleSaveBankAccount)}
+                >
+                  {editingAccount ? 'Save Changes' : 'Add Bank Account'}
+                </Button>
+              </>
+            }
+          >
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField label="Bank Name" htmlFor="ba-bank" error={bankForm.formState.errors.bank_name?.message} required>
+                  <Input id="ba-bank" placeholder="e.g. Equity Bank Kenya" error={!!bankForm.formState.errors.bank_name} {...bankForm.register('bank_name')} />
+                </FormField>
+                <FormField label="Account Name" htmlFor="ba-aname" error={bankForm.formState.errors.account_name?.message} required>
+                  <Input id="ba-aname" placeholder="e.g. Green View Properties Ltd" error={!!bankForm.formState.errors.account_name} {...bankForm.register('account_name')} />
+                </FormField>
+                <FormField label="Account Number" htmlFor="ba-anum" error={bankForm.formState.errors.account_number?.message} required>
+                  <Input id="ba-anum" placeholder="e.g. 0123456789" error={!!bankForm.formState.errors.account_number} {...bankForm.register('account_number')} />
+                </FormField>
+                <FormField label="Branch" htmlFor="ba-branch" hint="Optional">
+                  <Input id="ba-branch" placeholder="e.g. Westlands, Nairobi" {...bankForm.register('branch')} />
+                </FormField>
+                <FormField label="SWIFT / BIC Code" htmlFor="ba-swift" hint="For international transfers" className="col-span-2">
+                  <Input id="ba-swift" placeholder="e.g. EQBLKENAXXX" {...bankForm.register('swift_code')} />
+                </FormField>
+                <FormField label="Transfer Instructions" htmlFor="ba-instructions" hint="Shown to tenants" className="col-span-2">
+                  <Textarea id="ba-instructions" rows={2} placeholder="e.g. Use your invoice number as the payment reference." {...bankForm.register('instructions')} />
+                </FormField>
+              </div>
+
+              <div className="rounded-xl border border-border p-3">
+                <label className="flex items-center gap-2 text-xs font-medium text-foreground">
+                  <input type="checkbox" className="h-4 w-4 rounded border-border" {...bankForm.register('applies_to_all_properties')} />
+                  Share with all properties
+                </label>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {appliesToAll
+                    ? 'Every property — including ones you add later — will show this account to tenants.'
+                    : 'Only tenants in the properties you check below will see this account.'}
+                </p>
+
+                {!appliesToAll && (
+                  <div className="mt-3 max-h-48 space-y-1.5 overflow-y-auto border-t border-border pt-3">
+                    {properties.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No properties found.</p>
+                    ) : (
+                      properties.map((p) => (
+                        <label key={p.uuid} className="flex items-center gap-2 text-xs text-foreground">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-border"
+                            value={p.uuid}
+                            checked={bankForm.watch('property_uuids').includes(p.uuid)}
+                            onChange={(e) => {
+                              const current = bankForm.getValues('property_uuids')
+                              bankForm.setValue(
+                                'property_uuids',
+                                e.target.checked ? [...current, p.uuid] : current.filter((id) => id !== p.uuid),
+                                { shouldDirty: true }
+                              )
+                            }}
+                          />
+                          {p.name}
+                        </label>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </Modal>
+
+          <ConfirmDialog
+            open={!!deletingAccount}
+            onClose={() => setDeletingAccount(null)}
+            onConfirm={handleDeleteBankAccount}
+            loading={deletingBankAccount}
+            title="Delete Bank Account"
+            description={`This permanently removes ${deletingAccount?.bank_name ?? 'this account'} — ${deletingAccount?.account_name ?? ''}. Tenants attached to its properties will no longer see it.`}
+            confirmLabel="Delete"
+            variant="destructive"
+          />
 
           {/* Penalty Settings */}
           <SectionCard
             title="Late Payment Penalty"
             action={
-              currentProperty?.id ? (
-                <Button size="sm" loading={savingPenalty} onClick={() => savePenalty()}>
+              (penaltyApplyToAll || penaltyPropertyUuid) ? (
+                <Button size="sm" loading={savingPenalty} disabled={!penaltyApplyToAll && !penaltyPropertyUuid} onClick={() => savePenalty()}>
                   Save Penalty Settings
                 </Button>
               ) : undefined
             }
           >
-            {!currentProperty?.id ? (
-              <p className="text-xs text-muted-foreground">Select a property first to configure penalty settings.</p>
+            {properties.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Add a property first to configure penalty settings.</p>
             ) : (
               <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
+                  <FormField label="Apply to" htmlFor="pen-property">
+                    <Select
+                      id="pen-property"
+                      value={penaltyPropertyUuid}
+                      disabled={penaltyApplyToAll}
+                      onChange={(e) => setPenaltyPropertyUuid(e.target.value)}
+                      options={[
+                        { value: '', label: 'Select a property…', disabled: true },
+                        ...properties.map((p) => ({ value: p.uuid, label: p.name })),
+                      ]}
+                    />
+                  </FormField>
+                  <label className="flex items-center gap-2 self-end pb-2.5 text-sm font-medium text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={penaltyApplyToAll}
+                      onChange={(e) => setPenaltyApplyToAll(e.target.checked)}
+                    />
+                    Apply to all properties ({properties.length})
+                  </label>
+                </div>
                 <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-4 py-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                   <p className="text-xs text-amber-700 dark:text-amber-300">
-                    Penalty settings apply to <strong>{currentProperty.name}</strong>. All tenants in this property will see the penalty notice on their dashboard when enabled.
+                    {penaltyApplyToAll
+                      ? <>These settings will overwrite the penalty configuration for <strong>all {properties.length} propert{properties.length === 1 ? 'y' : 'ies'}</strong> in your organisation.</>
+                      : <>Penalty settings apply to <strong>{properties.find((p) => p.uuid === penaltyPropertyUuid)?.name ?? 'the selected property'}</strong> only. All tenants there will see the penalty notice on their dashboard when enabled.</>
+                    }
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -456,7 +651,7 @@ export default function Settings(): React.ReactElement {
                     <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform ${penaltyEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
                   </button>
                   <label className="text-sm font-medium text-foreground">
-                    Enable late payment penalty for <span className="font-bold">{currentProperty.name}</span>
+                    Enable late payment penalty {penaltyApplyToAll ? 'for all properties' : 'for the selected property'}
                   </label>
                 </div>
                 {penaltyEnabled && (

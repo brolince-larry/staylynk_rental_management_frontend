@@ -45,7 +45,6 @@ interface PropertyStatus {
 }
 
 interface RevenueSegment {
-  label: string
   amount: number
   percent: number
 }
@@ -55,10 +54,10 @@ interface AdminDashboardData {
   occupancy_chart: Array<{ date: string; occupancy_rate: number }>
   revenue_breakdown: {
     total: number
-    room_rent: RevenueSegment
-    late_fees: RevenueSegment
-    utilities: RevenueSegment
-    other_fees: RevenueSegment
+    expenses: RevenueSegment
+    salaries: RevenueSegment
+    profit: RevenueSegment
+    period?: { year: number }
   }
   recent_activity: AdminActivity[]
   recent_bookings: AdminBooking[]

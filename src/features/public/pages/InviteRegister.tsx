@@ -19,9 +19,13 @@ const schema = z.object({
   password_confirmation: z.string().min(1, 'Please confirm your password'),
   emergency_name:        z.string().optional(),
   emergency_phone:       z.string().optional(),
+  terms_accepted:        z.boolean(),
 }).refine((d) => d.password === d.password_confirmation, {
   message: 'Passwords do not match',
   path: ['password_confirmation'],
+}).refine((d) => d.terms_accepted === true, {
+  message: 'You must accept the Terms of Service and Privacy Policy to continue',
+  path: ['terms_accepted'],
 })
 
 type FormValues = z.infer<typeof schema>
@@ -88,6 +92,7 @@ export default function InviteRegister(): React.ReactElement {
         password_confirmation: values.password_confirmation,
         emergency_name:        values.emergency_name || undefined,
         emergency_phone:       values.emergency_phone || undefined,
+        terms_accepted:        values.terms_accepted,
       })
       if (res.success && res.data) {
         setDone(true)
@@ -301,6 +306,26 @@ export default function InviteRegister(): React.ReactElement {
                   </Field>
                 </div>
               </details>
+
+              <div>
+                <label htmlFor="terms_accepted" className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    id="terms_accepted"
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-border text-primary focus:ring-2 focus:ring-primary/40 focus:ring-offset-0"
+                    {...register('terms_accepted')}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    I have read and agree to the{' '}
+                    <a href="/terms" target="_blank" rel="noopener" className="font-medium text-primary hover:underline">Terms of Service</a>
+                    {' '}and{' '}
+                    <a href="/privacy" target="_blank" rel="noopener" className="font-medium text-primary hover:underline">Privacy Policy</a>.
+                  </span>
+                </label>
+                {errors.terms_accepted && (
+                  <p className="mt-1.5 text-[11px] text-destructive" role="alert">{errors.terms_accepted.message}</p>
+                )}
+              </div>
 
               <button
                 type="submit"

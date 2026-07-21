@@ -13,12 +13,14 @@ import { formatCurrency, formatDate, formatDatetime, formatYearMonth } from '@/u
 import { CheckCircle2, Download, Eye, XCircle } from 'lucide-react'
 import { openSignedDocument } from '@/api/documentDownloads'
 import { paymentsApi } from '@/api/payments'
+import { useAuthStore } from '@/store/auth.store'
 
 type Payment = Record<string, unknown>
 
 const METHOD_ICONS: Record<string, string> = { mpesa: '📱', bank_transfer: '🏦', card: '💳', cheque: '📝', cash: '💵' }
 
 export default function ManagerPayments(): React.ReactElement {
+  const currency = useAuthStore((s) => s.user?.org?.currency ?? 'KES')
   const [activeTab, setActiveTab] = useState<'all' | 'bank_transfers'>('all')
   const [statusFilter, setStatus] = useState('')
   const [recordOpen, setRecordOpen] = useState(false)
@@ -82,7 +84,7 @@ export default function ManagerPayments(): React.ReactElement {
     },
     {
       key: 'amount', header: 'Amount', align: 'right',
-      accessor: (row) => <span className="text-xs font-semibold text-foreground">{formatCurrency(row.amount as number)}</span>,
+      accessor: (row) => <span className="text-xs font-semibold text-foreground">{formatCurrency(row.amount as number, currency)}</span>,
     },
     {
       key: 'bank_reference', header: 'Bank Ref',
@@ -140,13 +142,13 @@ export default function ManagerPayments(): React.ReactElement {
     {
       key: 'method', header: 'Method',
       accessor: (row) => {
-        const m = row.payment_method as string
+        const m = row.method as string
         return <span className="text-xs text-foreground">{METHOD_ICONS[m] ?? '💰'} {m?.replace(/_/g, ' ')}</span>
       },
     },
     {
       key: 'amount', header: 'Amount', align: 'right', sortable: true,
-      accessor: (row) => <span className="text-xs font-semibold text-emerald-600">{formatCurrency(row.amount as number)}</span>,
+      accessor: (row) => <span className="text-xs font-semibold text-emerald-600">{formatCurrency(row.amount as number, currency)}</span>,
     },
     {
       key: 'paid_at', header: 'Date', sortable: true,

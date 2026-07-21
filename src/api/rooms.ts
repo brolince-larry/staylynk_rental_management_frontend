@@ -186,6 +186,9 @@ export const roomsApi = {
       { status }
     ),
 
+  nextNumber: () =>
+    apiGet<{ next_room_number: string }>('/admin/rooms/next-number'),
+
   managerList: (params: RoomFilters = {}) =>
     apiGet<PaginatedResponse<Record<string, unknown>>>(
       '/manager/rooms',
@@ -212,6 +215,9 @@ export const roomsApi = {
 
   managerAddBeds: (id: string, beds: string[]) =>
     apiPost<Record<string, unknown>[]>(`/manager/rooms/${id}/beds`, { beds }),
+
+  managerNextNumber: () =>
+    apiGet<{ next_room_number: string }>('/manager/rooms/next-number'),
 
   managerRemoveBed: (roomId: string, bedId: string) =>
     apiDelete(`/manager/rooms/${roomId}/beds/${bedId}`),

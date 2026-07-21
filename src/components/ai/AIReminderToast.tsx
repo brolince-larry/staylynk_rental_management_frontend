@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { Bell, X } from 'lucide-react'
 import { remindersApi, type AIReminder } from '@/api/reminders'
 import { useAuthStore } from '@/store/auth.store'
-import { getEcho } from '@/lib/echo'
+import { useRealtime } from '@/providers/realtimeContext'
 
 interface ReminderToastItem extends AIReminder {
   _dismissed?: boolean
@@ -11,7 +11,13 @@ interface ReminderToastItem extends AIReminder {
 export function AIReminderToast(): React.ReactElement | null {
   const { token, user } = useAuthStore()
   const userId = user?.id
+  const { subscribePrivate } = useRealtime()
   const [toasts, setToasts] = useState<ReminderToastItem[]>([])
+  const [readyToken, setReadyToken] = useState<string | null>(null)
+  const ready = readyToken === token
+  const remindersChannel = useMemo(() => (
+    token && userId ? `ai.reminders.${String(userId)}` : null
+  ), [token, userId])
 
   const addToast = useCallback((reminder: AIReminder) => {
     setToasts((prev) => {
@@ -20,28 +26,28 @@ export function AIReminderToast(): React.ReactElement | null {
     })
   }, [])
 
-  // Poll for due reminders on mount
   useEffect(() => {
     if (!token) return
+    const timer = window.setTimeout(() => setReadyToken(token), 2_000)
+    return () => window.clearTimeout(timer)
+  }, [token])
+
+  // Poll for due reminders on mount
+  useEffect(() => {
+    if (!ready || !token) return
     remindersApi.list()
       .then((r) => {
         const due = (r.data ?? []).filter((rem) => rem.is_due)
         due.forEach(addToast)
       })
       .catch(() => {})
-  }, [token, addToast])
+  }, [ready, token, addToast])
 
   // Reverb push
   useEffect(() => {
-    if (!token || !userId) return
-    const echo = getEcho(token)
-    if (!echo) return
-    const channel = echo.private(`ai.reminders.${userId}`)
-    channel.listen('.ai.reminder.due', (data: AIReminder) => {
-      addToast(data)
-    })
-    return () => { channel.stopListening('.ai.reminder.due') }
-  }, [token, userId, addToast])
+    if (!ready || !remindersChannel) return
+    return subscribePrivate<AIReminder>(remindersChannel, '.ai.reminder.due', addToast)
+  }, [ready, remindersChannel, subscribePrivate, addToast])
 
   const dismiss = useCallback(async (uuid: string) => {
     setToasts((prev) => prev.filter((t) => t.uuid !== uuid))
