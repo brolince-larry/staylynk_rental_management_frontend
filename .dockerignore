@@ -1,0 +1,12 @@
+node_modules
+dist
+.git
+.env
+.env.production
+.env.development
+.env.local
+.env.example
+*.bak-*
+*.md
+.vscode
+.DS_Store
