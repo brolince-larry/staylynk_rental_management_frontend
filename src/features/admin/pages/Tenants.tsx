@@ -9,8 +9,7 @@ import { useTenants, useCreateTenant, useUpdateTenant, useVerifyTenant, useUpdat
 import { useDebounce, usePagination, useToast } from '@/hooks'
 import { DataTable, type ColumnDef, type SortState } from '@/components/tables/DataTable'
 import { SearchInput, FilterBar, Select, Modal, Button, ConfirmDialog, FormField, Input, Textarea, ToastContainer } from '@/components/forms'
-import { MediaUploadField, SmartImage } from '@/components/media'
-import { entityIdFromResponse, mediaService } from '@/services/media'
+import { SmartImage } from '@/components/media'
 import { PageHeader, StatusBadge } from '@/components/ui'
 import { formatRelative } from '@/utils/format'
 import { tenantSchema, type TenantSchema } from '@/schemas'
@@ -28,9 +27,7 @@ export default function TenantsPage(): React.ReactElement {
   const [createOpen, setCreateOpen] = useState(false)
   const [editTenant, setEditTenant] = useState<Tenant | null>(null)
   const [deletingTenant, setDeletingTenant] = useState<Tenant | null>(null)
-  const [profilePhotoFiles, setProfilePhotoFiles] = useState<File[]>([])
-  const [mediaProgress, setMediaProgress] = useState<number | null>(null)
-  const [uploadingMedia, setUploadingMedia] = useState(false)
+  const [credentialsModal, setCredentialsModal] = useState<{ name: string; email: string; password: string } | null>(null)
   const { page, perPage, setPage, setPerPage } = usePagination()
   const debouncedSearch = useDebounce(search, 400)
   const { toasts, success, error: toastError, dismiss } = useToast()
@@ -75,8 +72,6 @@ export default function TenantsPage(): React.ReactElement {
 
   const closeCreate = () => {
     setCreateOpen(false)
-    setProfilePhotoFiles([])
-    setMediaProgress(null)
     form.reset({ property_id: currentPropertyId, lease_status: 'pending', move_in_date: todayIso() })
   }
 
@@ -114,7 +109,6 @@ export default function TenantsPage(): React.ReactElement {
       form.setError('room_id', { message: 'Vacant room is required' })
       return
     }
-
     createTenant(buildTenantPayload({
       ...values,
       property_id: currentPropertyId,
@@ -122,37 +116,13 @@ export default function TenantsPage(): React.ReactElement {
       lease_status: values.lease_status ?? 'pending',
     }), {
       onSuccess: (response) => {
-        const tenantId = entityIdFromResponse(response.data)
-        if (!tenantId && profilePhotoFiles.length > 0) {
-          success('Tenant created')
-          toastError('Upload the profile photo after opening the tenant again.', 'Tenant ID was not returned')
-          closeCreate()
-          return
+        const data = response.data as { generated_password?: string } | undefined
+        const generatedPassword = data?.generated_password
+        success('Tenant created')
+        closeCreate()
+        if (generatedPassword) {
+          setCredentialsModal({ name: values.name, email: values.email, password: generatedPassword })
         }
-
-        void (async () => {
-          try {
-            setUploadingMedia(true)
-            if (tenantId && profilePhotoFiles.length > 0) {
-              await mediaService.uploadFilesForEntity({
-                files: profilePhotoFiles,
-                media_type: 'tenant_profile_photo',
-                entity_type: 'tenant',
-                entity_id: tenantId,
-                is_public: false,
-                cover_index: 0,
-                alt_text: `${values.name} profile photo`,
-              }, ({ progress }) => setMediaProgress(progress))
-            }
-            success(profilePhotoFiles.length > 0 ? 'Tenant created. Profile photo is processing.' : 'Tenant created')
-            closeCreate()
-          } catch (err) {
-            toastError(err, 'Tenant created, but profile photo upload failed')
-          } finally {
-            setUploadingMedia(false)
-            setMediaProgress(null)
-          }
-        })()
       },
       onError: (err) => toastError(err, 'Failed to create tenant'),
     })
@@ -355,7 +325,7 @@ export default function TenantsPage(): React.ReactElement {
         footer={
           <>
             <Button variant="outline" onClick={closeCreate}>Cancel</Button>
-            <Button loading={creating || uploadingMedia} onClick={form.handleSubmit(handleCreate)}>Create Tenant</Button>
+            <Button loading={creating} onClick={form.handleSubmit(handleCreate)}>Create Tenant</Button>
           </>
         }
       >
@@ -368,9 +338,6 @@ export default function TenantsPage(): React.ReactElement {
           </FormField>
           <FormField label="Phone Number" htmlFor="phone_number" error={form.formState.errors.phone_number?.message} required>
             <Input id="phone_number" placeholder="+254700000000" error={!!form.formState.errors.phone_number} {...form.register('phone_number')} />
-          </FormField>
-          <FormField label="Password" htmlFor="password" error={form.formState.errors.password?.message} hint="Leave blank to auto-generate">
-            <Input id="password" type="password" placeholder="••••••••" error={!!form.formState.errors.password} {...form.register('password')} />
           </FormField>
           <FormField label="Vacant Room" htmlFor="room_id" error={form.formState.errors.room_id?.message} required>
             <Select
@@ -391,6 +358,9 @@ export default function TenantsPage(): React.ReactElement {
           <FormField label="Move-In Date" htmlFor="move_in_date" error={form.formState.errors.move_in_date?.message} required>
             <Input id="move_in_date" type="date" error={!!form.formState.errors.move_in_date} {...form.register('move_in_date')} />
           </FormField>
+          <FormField label="First Payment Due Date" htmlFor="first_payment_due_date" hint="Rent + deposit invoice. Later payments follow the standard billing cycle.">
+            <Input id="first_payment_due_date" type="date" {...form.register('first_payment_due_date')} />
+          </FormField>
           <FormField label="Lease Status" htmlFor="lease_status" error={form.formState.errors.lease_status?.message}>
             <Select id="lease_status" error={!!form.formState.errors.lease_status} {...form.register('lease_status')}
               options={[{ value:'pending', label:'Pending' }, { value:'active', label:'Active' }]} />
@@ -405,16 +375,6 @@ export default function TenantsPage(): React.ReactElement {
             <FormField label="Notes" htmlFor="notes">
               <Textarea id="notes" rows={2} placeholder="Optional notes…" {...form.register('notes')} />
             </FormField>
-          </div>
-          <div className="col-span-2">
-            <MediaUploadField
-              label="Profile Photo"
-              mediaType="tenant_profile_photo"
-              files={profilePhotoFiles}
-              onChange={setProfilePhotoFiles}
-              hint="PNG, JPG, or WebP up to 2MB."
-              progress={uploadingMedia ? mediaProgress : null}
-            />
           </div>
         </form>
       </Modal>
@@ -493,6 +453,30 @@ export default function TenantsPage(): React.ReactElement {
         confirmLabel="Delete"
         variant="destructive"
       />
+      <Modal
+        open={!!credentialsModal}
+        onClose={() => setCredentialsModal(null)}
+        title="Tenant created"
+        size="sm"
+        footer={
+          <Button onClick={() => setCredentialsModal(null)}>Done</Button>
+        }
+      >
+        <p className="mb-4 text-sm text-muted-foreground">
+          Share these login details with <strong>{credentialsModal?.name}</strong>. They will be required to set a new
+          password the first time they log in — this password will not be shown again.
+        </p>
+        <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4 text-sm">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Email</span>
+            <code className="rounded bg-background px-2 py-1 font-mono text-xs">{credentialsModal?.email}</code>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Password</span>
+            <code className="rounded bg-background px-2 py-1 font-mono text-xs">{credentialsModal?.password}</code>
+          </div>
+        </div>
+      </Modal>
     </>
   )
 }
@@ -550,6 +534,7 @@ function buildTenantPayload(
   if (options.includeLease !== false) {
     if (values.room_id) payload.room_id = values.room_id
     if (values.move_in_date) payload.move_in_date = values.move_in_date
+    if (values.first_payment_due_date) payload.first_payment_due_date = values.first_payment_due_date
     payload.lease_status = values.lease_status ?? 'pending'
   }
 

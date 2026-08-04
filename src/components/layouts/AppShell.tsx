@@ -19,7 +19,7 @@ import { useAuthStore } from '@/store/auth.store'
 import { useLogout } from '@/providers/AuthProvider'
 import { SmartImage } from '@/components/media'
 import type { Role } from '@/types'
-import appLogo from '@/assets/logo.svg'
+import appLogo from '@/assets/logo.png'
 
 export interface NavItem {
   label: string

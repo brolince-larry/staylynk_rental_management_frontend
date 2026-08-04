@@ -7,4 +7,6 @@ export {
   useUpdateProperty,
   useDeleteProperty,
   useUpdatePropertyStatus,
+  useDeletedProperties,
+  useRestoreProperty,
 } from './index'

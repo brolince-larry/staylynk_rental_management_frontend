@@ -41,7 +41,7 @@ export type VerificationStatus = 'unverified' | 'verified' | 'trusted'
 export type ListingMediaReference = MediaItem | string | null
 
 export interface ListingVideo {
-  id: string
+  id: string | number
   video_url: string | null
   thumbnail_url: string | null
   duration?: number | null

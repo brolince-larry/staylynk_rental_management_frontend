@@ -104,6 +104,26 @@ export function useUpdatePropertyStatus(id: string) {
   })
 }
 
+export function useDeletedProperties() {
+  const orgId = useOrgId()
+  return useQuery({
+    queryKey: QK.deletedProperties(orgId),
+    queryFn: () => propertiesApi.listDeleted().then((r) => r.data.data),
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useRestoreProperty() {
+  const qc = useQueryClient(); const orgId = useOrgId()
+  return useMutation({
+    mutationFn: (uuid: string) => propertiesApi.restore(uuid),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QK.deletedProperties(orgId) })
+      void qc.invalidateQueries({ queryKey: ['admin', 'properties', orgId] })
+    },
+  })
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // ROOMS
 // ══════════════════════════════════════════════════════════════════════════

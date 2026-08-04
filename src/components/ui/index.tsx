@@ -1,7 +1,7 @@
 // src/components/ui/index.tsx
 import React, { type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { TrendingUp, TrendingDown, Minus, ArrowRight } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, ArrowRight, type LucideIcon } from 'lucide-react'
 import { clsx } from 'clsx'
 
 export { PermissionDeniedModal } from './PermissionDeniedModal'
@@ -221,6 +221,7 @@ export function ProgressBar({
 // ─── SectionCard ──────────────────────────────────────────────────────────
 interface SectionCardProps {
   title: string
+  icon?: ReactNode
   action?: ReactNode
   children: ReactNode
   className?: string
@@ -230,6 +231,7 @@ interface SectionCardProps {
 
 export function SectionCard({
   title,
+  icon,
   action,
   children,
   className,
@@ -239,7 +241,10 @@ export function SectionCard({
   return (
     <div className={clsx('app-card min-w-0 overflow-hidden rounded-xl', className)}>
       <div className="flex items-center justify-between gap-2 border-b border-border bg-gradient-to-r from-muted/30 to-transparent px-5 py-3.5">
-        <h2 className="min-w-0 truncate text-sm font-semibold text-foreground">{title}</h2>
+        <div className="flex min-w-0 items-center gap-2">
+          {icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
+          <h2 className="min-w-0 truncate text-sm font-semibold text-foreground">{title}</h2>
+        </div>
         {action && <div className="shrink-0 text-xs text-muted-foreground">{action}</div>}
       </div>
       <div className={clsx('min-w-0', padding ? 'p-5' : '', contentClassName)}>{children}</div>
@@ -296,20 +301,28 @@ interface PageHeaderProps {
   title: ReactNode
   subtitle?: string
   actions?: ReactNode
+  icon?: LucideIcon
   /** @deprecated Pass a subtitle instead — emoji in headings reduces the premium feel */
   emoji?: string
 }
 
-export function PageHeader({ title, subtitle, actions }: PageHeaderProps): React.ReactElement {
+export function PageHeader({ title, subtitle, actions, icon: Icon }: PageHeaderProps): React.ReactElement {
   return (
     <div className="mb-6 flex flex-col gap-3 pt-1.5 sm:flex-row sm:items-start sm:justify-between">
-      <div className="min-w-0">
-        <h1 className="text-[1.5rem] font-bold tracking-tight text-foreground sm:text-[1.625rem]">
-          {title}
-        </h1>
-        {subtitle && (
-          <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
+      <div className="flex min-w-0 items-start gap-3">
+        {Icon && (
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <Icon className="h-5 w-5" />
+          </div>
         )}
+        <div className="min-w-0">
+          <h1 className="text-[1.5rem] font-bold tracking-tight text-foreground sm:text-[1.625rem]">
+            {title}
+          </h1>
+          {subtitle && (
+            <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
+          )}
+        </div>
       </div>
       {actions && (
         <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { KeyRound, Plus, RefreshCw, ShieldCheck, ShieldOff } from 'lucide-react'
 import { useForm, useWatch, type Resolver } from 'react-hook-form'
@@ -10,7 +10,7 @@ import { PageHeader, StatusBadge, StatCard } from '@/components/ui'
 import { usePagination, useToast } from '@/hooks'
 import type { PaymentCredential, PaymentProvider } from '@/types'
 import { isApiError } from '@/utils/errors'
-import type { PaymentCredentialApproval } from '@/api/paymentCredentials'
+import { paymentCredentialsApi, type PaymentCredentialApproval } from '@/api/paymentCredentials'
 import { useOrganizationProperties, useOrganizations } from '../hooks/useOrganizations'
 import {
   useCreatePaymentCredential,
@@ -45,7 +45,7 @@ const DEFAULTS: CredentialForm = {
   consumer_key: '',
   consumer_secret: '',
   passkey: '',
-  callback_url: 'https://mixonsoftwares.com/mpesa/callback',
+  callback_url: '',
   is_active: true,
 }
 
@@ -91,6 +91,7 @@ export default function PaymentCredentials(): React.ReactElement {
   const [provider, setProvider] = useState('')
   const [editing, setEditing] = useState<PaymentCredential | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [otpModal, setOtpModal] = useState<{ approvalId: string } | null>(null)
   const { page, perPage, setPage, setPerPage } = usePagination()
   const { toasts, success, warning, error: toastError, dismiss } = useToast()
 
@@ -171,9 +172,12 @@ export default function PaymentCredentials(): React.ReactElement {
         onSuccess: (response) => {
           const approval = pendingApproval(response.data)
           if (approval) {
-            const { title, description } = approvalToast(approval)
-            ;(approval.email_sent === false ? warning : success)(title, description)
             closeModal()
+            if (approval.email_sent === false) {
+              warning('Approval email could not be sent', 'A superadmin will need to review it directly.')
+              return
+            }
+            setOtpModal({ approvalId: approval.approval_id })
             return
           }
           success('Payment credential updated')
@@ -197,9 +201,12 @@ export default function PaymentCredentials(): React.ReactElement {
       onSuccess: (response) => {
         const approval = pendingApproval(response.data)
         if (approval) {
-          const { title, description } = approvalToast(approval)
-          ;(approval.email_sent === false ? warning : success)(title, description)
           closeModal()
+          if (approval.email_sent === false) {
+            warning('Approval email could not be sent', 'A superadmin will need to review it directly.')
+            return
+          }
+          setOtpModal({ approvalId: approval.approval_id })
           return
         }
         success('Payment credential saved')
@@ -430,8 +437,8 @@ export default function PaymentCredentials(): React.ReactElement {
           <FormField label="Passkey" htmlFor="pc-passkey" hint={editing ? 'Leave blank to keep existing' : undefined}>
             <Input id="pc-passkey" type="password" autoComplete="new-password" {...form.register('passkey')} />
           </FormField>
-          <FormField label="Callback URL" htmlFor="pc-callback" error={form.formState.errors.callback_url?.message}>
-            <Input id="pc-callback" type="url" placeholder="https://example.com/mpesa/callback" error={!!form.formState.errors.callback_url} {...form.register('callback_url')} />
+          <FormField label="Callback URL" htmlFor="pc-callback" error={form.formState.errors.callback_url?.message} hint="Leave blank to use StayLynk's built-in callback handler (recommended)">
+            <Input id="pc-callback" type="url" placeholder="Leave blank for default" error={!!form.formState.errors.callback_url} {...form.register('callback_url')} />
           </FormField>
           <label className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-foreground sm:col-span-2">
             <input type="checkbox" className="h-4 w-4 rounded border-border accent-primary" {...form.register('is_active')} />
@@ -439,6 +446,93 @@ export default function PaymentCredentials(): React.ReactElement {
           </label>
         </form>
       </Modal>
+      {otpModal && (
+        <OtpVerifyModal
+          approvalId={otpModal.approvalId}
+          onClose={() => setOtpModal(null)}
+          onVerified={() => {
+            setOtpModal(null)
+            success('Payment credential approved and applied')
+            void refetch()
+          }}
+        />
+      )}
     </>
+  )
+}
+
+function OtpVerifyModal({
+  approvalId,
+  onClose,
+  onVerified,
+}: {
+  approvalId: string
+  onClose: () => void
+  onVerified: () => void
+}): React.ReactElement {
+  const [digits, setDigits] = useState<string[]>(['', '', '', '', '', ''])
+  const [error, setError] = useState<string | null>(null)
+  const [verifying, setVerifying] = useState(false)
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([])
+
+  const submit = async (code: string) => {
+    setVerifying(true)
+    setError(null)
+    try {
+      await paymentCredentialsApi.verifyOtp(approvalId, code)
+      onVerified()
+    } catch (err) {
+      setError(isApiError(err) ? err.message : 'Verification failed. Please try again.')
+      setDigits(['', '', '', '', '', ''])
+      inputRefs.current[0]?.focus()
+    } finally {
+      setVerifying(false)
+    }
+  }
+
+  const handleChange = (index: number, value: string) => {
+    const char = value.replace(/\D/g, '').slice(-1)
+    const next = [...digits]
+    next[index] = char
+    setDigits(next)
+    if (char && index < 5) {
+      inputRefs.current[index + 1]?.focus()
+    }
+    if (char && index === 5) {
+      const code = next.join('')
+      if (code.length === 6) void submit(code)
+    }
+  }
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !digits[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus()
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Enter verification code" size="sm">
+      <p className="mb-4 text-sm text-muted-foreground">
+        A 6-digit code was sent to the active superadmin email(s). It expires in 3 minutes.
+      </p>
+      <div className="flex justify-center gap-2">
+        {digits.map((d, i) => (
+          <input
+            key={i}
+            ref={(el) => { inputRefs.current[i] = el }}
+            type="text"
+            inputMode="numeric"
+            maxLength={1}
+            value={d}
+            disabled={verifying}
+            onChange={(e) => handleChange(i, e.target.value)}
+            onKeyDown={(e) => handleKeyDown(i, e)}
+            className="h-12 w-10 rounded-lg border border-border bg-background text-center text-lg font-semibold text-foreground disabled:opacity-50"
+          />
+        ))}
+      </div>
+      {error && <p className="mt-3 text-center text-sm text-red-500">{error}</p>}
+      {verifying && <p className="mt-3 text-center text-sm text-muted-foreground">Verifying…</p>}
+    </Modal>
   )
 }

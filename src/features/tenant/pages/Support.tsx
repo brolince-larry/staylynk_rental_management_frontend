@@ -94,7 +94,7 @@ export default function TenantSupport(): React.ReactElement {
   return (
     <>
       <Helmet><title>Help & Support | StayLynk</title></Helmet>
-      <ToastContainer toasts={toasts} onDismiss={dismiss} />
+      <ToastContainer toasts={toasts} dismiss={dismiss} />
 
       <div className="p-4 sm:p-6">
         <PageHeader

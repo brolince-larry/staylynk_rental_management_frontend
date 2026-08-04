@@ -31,6 +31,15 @@ export interface PaymentCredentialApproval {
 
 export type PaymentCredentialMutationResult = PaymentCredential | PaymentCredentialApproval
 
+export interface PaymentCredentialApprovalDetails {
+  action: 'create' | 'update'
+  provider: string | null
+  display_name: string | null
+  environment: string | null
+  requested_by: string | null
+  expires_at: string
+}
+
 export const paymentCredentialsApi = {
   list: (params: PaymentCredentialFilters = {}) =>
     apiGet<PaginatedResponse<PaymentCredential>>(
@@ -46,4 +55,6 @@ export const paymentCredentialsApi = {
 
   disable: (uuid: string) =>
     apiDelete(`/superadmin/payment-credentials/${uuid}`),
+  verifyOtp: (approvalId: string, code: string) =>
+    apiPost<{ credential: PaymentCredential }>(`/superadmin/payment-credentials/approvals/${approvalId}/verify`, { code }),
 }

@@ -558,7 +558,7 @@ export default function ManagerInvites(): React.ReactElement {
             onError: (err) => { handleLockedError(err, 'Failed to revoke invite'); setRevokeTarget(null) },
           })
         }}
-        onCancel={() => setRevokeTarget(null)}
+        onClose={() => setRevokeTarget(null)}
       />
 
       <ConfirmDialog
@@ -574,7 +574,7 @@ export default function ManagerInvites(): React.ReactElement {
             onError: (err) => { handleLockedError(err, 'Failed to revoke invites'); setRevokeAllPropId(null) },
           })
         }}
-        onCancel={() => setRevokeAllPropId(null)}
+        onClose={() => setRevokeAllPropId(null)}
       />
 
       <Modal

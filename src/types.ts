@@ -43,6 +43,7 @@ export interface AuthUser {
     permissions?: string[] | Record<string, boolean>
   } | null
   permissions?: string[]
+  must_change_password?: boolean
 }
 
 export interface LoginPayload {

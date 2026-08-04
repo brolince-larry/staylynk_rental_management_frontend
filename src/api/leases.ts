@@ -98,19 +98,19 @@ export const leasesApi = {
       params as Record<string, unknown>
     ),
 
-  adminGet: (id: string) =>
+  adminGet: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/admin/leases/${id}`),
 
-  adminTerminate: (id: string, data: TerminatePayload) =>
+  adminTerminate: (id: string | number, data: TerminatePayload) =>
     apiPost<Record<string, unknown>>(
       `/admin/leases/${id}/terminate`,
       data
     ),
 
-  adminDownload: (id: string) =>
+  adminDownload: (id: string | number) =>
     apiGet<{ url?: string; expires_in?: string }>(`/admin/leases/${id}/download`),
 
-  adminRecordLastPayment: (id: string, data: RecordLastPaymentPayload) =>
+  adminRecordLastPayment: (id: string | number, data: RecordLastPaymentPayload) =>
     apiPatch<RecordLastPaymentResult>(`/admin/rent/leases/${id}/record-payment`, data),
 
   // ── Manager ──────────────────────────────────────────────────────
@@ -120,28 +120,28 @@ export const leasesApi = {
       stripPropertyId(params) as Record<string, unknown>
     ),
 
-  get: (id: string) =>
+  get: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/manager/leases/${id}`),
 
   create: (data: LeasePayload) =>
     apiPost<Record<string, unknown>>('/manager/leases', stripPropertyId(data)),
 
-  terminate: (id: string, data: TerminatePayload) =>
+  terminate: (id: string | number, data: TerminatePayload) =>
     apiPost<Record<string, unknown>>(
       `/manager/leases/${id}/terminate`,
       data
     ),
 
-  renew: (id: string, data: RenewPayload) =>
+  renew: (id: string | number, data: RenewPayload) =>
     apiPost<Record<string, unknown>>(
       `/manager/leases/${id}/renew`,
       data
     ),
 
-  download: (id: string) =>
+  download: (id: string | number) =>
     apiGet<{ url?: string; expires_in?: string }>(`/manager/leases/${id}/download`),
 
-  recordLastPayment: (id: string, data: RecordLastPaymentPayload) =>
+  recordLastPayment: (id: string | number, data: RecordLastPaymentPayload) =>
     apiPatch<RecordLastPaymentResult>(`/manager/rent/leases/${id}/record-payment`, data),
 
   expiring: (days?: number) =>

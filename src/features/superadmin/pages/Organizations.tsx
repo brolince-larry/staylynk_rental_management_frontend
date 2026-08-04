@@ -200,7 +200,7 @@ export default function Organizations(): React.ReactElement {
 
         return (
           <span className="text-[0.65rem] text-muted-foreground">
-            {planLimit !== undefined ? `${planLimit.toLocaleString()}/d` : '—'}
+            {planLimit !== undefined && planLimit !== null ? `${planLimit.toLocaleString()}/d` : '—'}
           </span>
         )
       },

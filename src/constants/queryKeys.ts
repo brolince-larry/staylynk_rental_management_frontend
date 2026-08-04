@@ -16,6 +16,8 @@ export const QK = {
     ['admin', 'properties', orgId, id] as const,
   propertyStats: (orgId: string, id: string) =>
     ['admin', 'properties', orgId, id, 'stats'] as const,
+  deletedProperties: (orgId: string) =>
+    ['admin', 'properties', orgId, 'deleted'] as const,
 
   rooms: (orgId: string, params?: object) =>
     ['admin', 'rooms', orgId, params] as const,

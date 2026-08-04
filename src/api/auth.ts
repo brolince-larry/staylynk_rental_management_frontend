@@ -38,4 +38,9 @@ export const authApi = {
     password_confirmation: string
   }) =>
     apiPost<null>('/auth/reset-password', payload),
+  forceChangePassword: (payload: {
+    password:              string
+    password_confirmation: string
+  }) =>
+    apiPost<null>('/auth/force-change-password', payload),
 }

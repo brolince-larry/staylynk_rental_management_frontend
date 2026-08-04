@@ -296,10 +296,10 @@ export default function InvoicesPage(): React.ReactElement {
 
         {/* Summary stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-          <StatCard label="Total Invoices" value={typeof sum?.total_count === 'number' || typeof sum?.total_count === 'string' ? sum.total_count : '—'} icon={<FileText className="h-4 w-4 text-violet-600" />} iconBg="bg-violet-100" />
-          <StatCard label="Total Amount" value={sum ? formatCurrency(sum.total_amount as number, currency) : '—'} icon={<DollarSign className="h-4 w-4 text-emerald-600" />} iconBg="bg-emerald-100" />
-          <StatCard label="Pending" value={sum ? formatCurrency(sum.pending_amount as number, currency) : '—'} icon={<Clock className="h-4 w-4 text-amber-600" />} iconBg="bg-amber-100" />
-          <StatCard label="Overdue" value={typeof sum?.overdue_count === 'number' || typeof sum?.overdue_count === 'string' ? sum.overdue_count : '—'} icon={<XCircle className="h-4 w-4 text-red-500" />} iconBg="bg-red-100" />
+          <StatCard label="Total Invoices" value={typeof sum?.total_invoices === 'number' ? sum.total_invoices : '—'} icon={<FileText className="h-4 w-4 text-violet-600" />} iconBg="bg-violet-100" />
+          <StatCard label="Total Amount" value={typeof sum?.total_expected === 'number' ? formatCurrency(sum.total_expected, currency) : '—'} icon={<DollarSign className="h-4 w-4 text-emerald-600" />} iconBg="bg-emerald-100" />
+          <StatCard label="Pending" value={typeof sum?.total_pending === 'number' ? formatCurrency(sum.total_pending, currency) : '—'} icon={<Clock className="h-4 w-4 text-amber-600" />} iconBg="bg-amber-100" />
+          <StatCard label="Overdue" value={typeof (sum?.by_status as { overdue?: number } | undefined)?.overdue === 'number' ? (sum!.by_status as { overdue: number }).overdue : '—'} icon={<XCircle className="h-4 w-4 text-red-500" />} iconBg="bg-red-100" />
         </div>
 
         {/* Tabs */}

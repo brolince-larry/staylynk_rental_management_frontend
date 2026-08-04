@@ -2,7 +2,7 @@
 import { apiGet, apiPost, apiPatch, apiDelete } from './client'
 
 export interface BankAccount {
-  id: string
+  id: string | number
   bank_name: string
   account_name: string
   account_number: string
@@ -10,7 +10,7 @@ export interface BankAccount {
   swift_code?: string | null
   instructions?: string | null
   applies_to_all_properties: boolean
-  properties: { id: string; name: string }[]
+  properties: { id: string | number; name: string }[]
   created_at: string
 }
 
@@ -32,9 +32,9 @@ export const bankAccountsApi = {
   create: (data: BankAccountInput) =>
     apiPost<BankAccount>('/admin/bank-accounts', data),
 
-  update: (id: string, data: Partial<BankAccountInput>) =>
+  update: (id: string | number, data: Partial<BankAccountInput>) =>
     apiPatch<BankAccount>(`/admin/bank-accounts/${id}`, data),
 
-  remove: (id: string) =>
+  remove: (id: string | number) =>
     apiDelete<void>(`/admin/bank-accounts/${id}`),
 }

@@ -23,6 +23,7 @@ export interface TenantPayload {
   room_uuid?: string
   room_number?: string
   move_in_date?: string
+  first_payment_due_date?: string
   lease_status?: 'pending' | 'active' | 'expired' | 'terminated' | 'cancelled'
   password?: string
   emergency_name?: string
@@ -50,25 +51,25 @@ export const tenantsApi = {
   list: (params: TenantFilters = {}) =>
     apiGet<PaginatedResponse<Record<string, unknown>>>('/admin/tenants', params as Record<string, unknown>),
 
-  get: (id: string) =>
+  get: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/admin/tenants/${id}`),
 
   create: (data: TenantPayload) =>
     apiPost<Record<string, unknown>>('/admin/tenants', data),
 
-  update: (id: string, data: Partial<TenantPayload & { status?: string }>) =>
+  update: (id: string | number, data: Partial<TenantPayload & { status?: string }>) =>
     apiPatch<Record<string, unknown>>(`/admin/tenants/${id}`, data),
 
-  delete: (id: string) =>
+  delete: (id: string | number) =>
     apiDelete(`/admin/tenants/${id}`),
 
-  history: (id: string) =>
+  history: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/admin/tenants/${id}/history`),
 
-  verify: (id: string) =>
+  verify: (id: string | number) =>
     apiPatch<{ id: number; is_verified: boolean; verified_at: string }>(`/admin/tenants/${id}/verify`),
 
-  updateStatus: (id: string, status: string, reason?: string) =>
+  updateStatus: (id: string | number, status: string, reason?: string) =>
     apiPatch<{ id: number; status: string }>(`/admin/tenants/${id}/status`, { status, reason }),
 
   managerList: (params: TenantFilters = {}) =>
@@ -77,16 +78,16 @@ export const tenantsApi = {
   managerCreate: (data: TenantPayload) =>
     apiPost<Record<string, unknown>>('/manager/tenants', data),
 
-  managerUpdate: (id: string, data: Partial<TenantPayload & { status?: string }>) =>
+  managerUpdate: (id: string | number, data: Partial<TenantPayload & { status?: string }>) =>
     apiPatch<Record<string, unknown>>(`/manager/tenants/${id}`, data),
 
-  managerDelete: (id: string) =>
+  managerDelete: (id: string | number) =>
     apiDelete(`/manager/tenants/${id}`),
 
-  managerVerify: (id: string) =>
+  managerVerify: (id: string | number) =>
     apiPatch<{ id: number; is_verified: boolean; verified_at: string }>(`/manager/tenants/${id}/verify`),
 
-  managerUpdateStatus: (id: string, status: string, reason?: string) =>
+  managerUpdateStatus: (id: string | number, status: string, reason?: string) =>
     apiPatch<{ id: number; status: string }>(`/manager/tenants/${id}/status`, { status, reason }),
 
   updatePropertyPenalty: (propertyId: string, data: {
@@ -124,16 +125,16 @@ export const invoicesApi = {
   list: (params: InvoiceFilters = {}) =>
     apiGet<PaginatedResponse<Record<string, unknown>>>('/admin/invoices', params as Record<string, unknown>),
 
-  get: (id: string) =>
+  get: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/admin/invoices/${id}`),
 
   create: (data: InvoicePayload) =>
     apiPost<Record<string, unknown>>('/admin/invoices', data),
 
-  update: (id: string, data: Partial<InvoicePayload>) =>
+  update: (id: string | number, data: Partial<InvoicePayload>) =>
     apiPatch<Record<string, unknown>>(`/admin/invoices/${id}`, data),
 
-  delete: (id: string) =>
+  delete: (id: string | number) =>
     apiDelete(`/admin/invoices/${id}`),
 
   generateMonthly: (invoice_month: string, property_id?: number) =>
@@ -141,10 +142,10 @@ export const invoicesApi = {
       '/admin/invoices/generate-monthly', { invoice_month, property_id }
     ),
 
-  void: (id: string, reason: string) =>
+  void: (id: string | number, reason: string) =>
     apiPatch<{ id: number; status: string }>(`/admin/invoices/${id}/void`, { reason }),
 
-  send: (id: string) =>
+  send: (id: string | number) =>
     apiPost<{ id: number; sent_at: string }>(`/admin/invoices/${id}/send`),
 
   summary: (params?: { property_id?: number; month?: string }) =>
@@ -158,7 +159,7 @@ export const invoicesApi = {
   tenantList: (params?: { status?: string; page?: number; per_page?: number }) =>
     apiGet<PaginatedResponse<Record<string, unknown>>>('/tenant/invoices', params as Record<string, unknown>),
 
-  tenantGet: (id: string) =>
+  tenantGet: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/tenant/invoices/${id}`),
 }
 
@@ -190,16 +191,16 @@ export const paymentsApi = {
   list: (params: PaymentFilters = {}) =>
     apiGet<PaginatedResponse<Record<string, unknown>>>('/admin/payments', params as Record<string, unknown>),
 
-  get: (id: string) =>
+  get: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/admin/payments/${id}`),
 
   create: (data: PaymentPayload) =>
     apiPost<Record<string, unknown>>('/admin/payments', data),
 
-  reverse: (id: string) =>
+  reverse: (id: string | number) =>
     apiDelete<{ id: number; status: string; invoice_balance: number }>(`/admin/payments/${id}`),
 
-  receipt: (id: string) =>
+  receipt: (id: string | number) =>
     apiGet<{ url?: string; receipt?: Record<string, unknown> }>(`/admin/payments/${id}/receipt`),
 
   summary: (params?: { property_id?: number; month?: string }) =>
@@ -241,7 +242,7 @@ export const paymentsApi = {
   tenantList: (params?: { page?: number; per_page?: number }) =>
     apiGet<PaginatedResponse<Record<string, unknown>>>('/tenant/payments', params as Record<string, unknown>),
 
-  tenantReceipt: (id: string) =>
+  tenantReceipt: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/tenant/payments/${id}/receipt`),
 }
 
@@ -276,30 +277,30 @@ export const leasesApi = {
   // Admin
   adminList: (params: LeaseFilters = {}) =>
     apiGet<PaginatedResponse<Record<string, unknown>>>('/admin/leases', params as Record<string, unknown>),
-  adminGet: (id: string) =>
+  adminGet: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/admin/leases/${id}`),
-  adminTerminate: (id: string, data: { reason: string; termination_date?: string }) =>
+  adminTerminate: (id: string | number, data: { reason: string; termination_date?: string }) =>
     apiPatch<Record<string, unknown>>(`/admin/leases/${id}/terminate`, data),
-  adminDownload: (id: string) =>
+  adminDownload: (id: string | number) =>
     apiGet<{ url?: string; expires_in?: string }>(`/admin/leases/${id}/download`),
 
   // Manager
   list: (params: LeaseFilters = {}) =>
     apiGet<PaginatedResponse<Record<string, unknown>>>('/manager/leases', params as Record<string, unknown>),
 
-  get: (id: string) =>
+  get: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/manager/leases/${id}`),
 
   create: (data: LeasePayload) =>
     apiPost<Record<string, unknown>>('/manager/leases', data),
 
-  terminate: (id: string, data: { reason: string; termination_date?: string }) =>
+  terminate: (id: string | number, data: { reason: string; termination_date?: string }) =>
     apiPatch<Record<string, unknown>>(`/manager/leases/${id}/terminate`, data),
 
-  renew: (id: string, data: { lease_term_months: number; monthly_rent?: number; payment_due_day?: number }) =>
+  renew: (id: string | number, data: { lease_term_months: number; monthly_rent?: number; payment_due_day?: number }) =>
     apiPost<Record<string, unknown>>(`/manager/leases/${id}/renew`, data),
 
-  download: (id: string) =>
+  download: (id: string | number) =>
     apiGet<{ url?: string; expires_in?: string }>(`/manager/leases/${id}/download`),
 
   expiring: (days?: number) =>
@@ -348,16 +349,16 @@ export const maintenanceApi = {
   list: (params: MaintenanceFilters = {}) =>
     apiGet<PaginatedResponse<Record<string, unknown>>>('/manager/maintenance', params as Record<string, unknown>),
 
-  get: (id: string) =>
+  get: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/manager/maintenance/${id}`),
 
   create: (data: MaintenancePayload) =>
     apiPost<Record<string, unknown>>('/manager/maintenance', data),
 
-  assign: (id: string, assigned_to: number) =>
+  assign: (id: string | number, assigned_to: number) =>
     apiPatch<{ id: number; status: string; assigned_at: string }>(`/manager/maintenance/${id}/assign`, { assigned_to }),
 
-  startProgress: (id: string) =>
+  startProgress: (id: string | number) =>
     apiPatch<{ id: number; status: string }>(`/manager/maintenance/${id}/progress`),
 
   resolve: (id: number, data: { resolution_notes: string; repair_cost?: number }) =>
@@ -366,7 +367,7 @@ export const maintenanceApi = {
   reject: (id: number, reason: string) =>
     apiPatch<{ id: number; status: string }>(`/manager/maintenance/${id}/reject`, { reason }),
 
-  delete: (id: string) =>
+  delete: (id: string | number) =>
     apiDelete(`/manager/maintenance/${id}`),
 
   summary: (params?: { property_id?: number }) =>
@@ -376,7 +377,7 @@ export const maintenanceApi = {
   tenantList: (params?: { status?: string; page?: number; per_page?: number }) =>
     apiGet<PaginatedResponse<Record<string, unknown>>>('/tenant/maintenance', params as Record<string, unknown>),
 
-  tenantGet: (id: string) =>
+  tenantGet: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/tenant/maintenance/${id}`),
 
   tenantCreate: (data: Pick<MaintenancePayload, 'title' | 'description' | 'category' | 'images'> & { priority?: string }) =>

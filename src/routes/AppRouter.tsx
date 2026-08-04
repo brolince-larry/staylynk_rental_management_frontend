@@ -48,6 +48,7 @@ const SAOrganizations = lazy(() => import('@/features/superadmin/pages/Organizat
 const SAPlans         = lazy(() => import('@/features/superadmin/pages/Plans'))
 const SABilling       = lazy(() => import('@/features/superadmin/pages/Billing'))
 const SAPaymentCredentials = lazy(() => import('@/features/superadmin/pages/PaymentCredentials'))
+const SAPaymentCredentialApproval = lazy(() => import('@/features/superadmin/pages/PaymentCredentialApproval'))
 const SAVerifications = lazy(() => import('@/features/superadmin/pages/Verifications'))
 const SAUsers         = lazy(() => import('@/features/superadmin/pages/Users'))
 const SAAuditLogs     = lazy(() => import('@/features/superadmin/pages/AuditLogs'))
@@ -222,6 +223,7 @@ const routes = [
       { path: 'plans',         element: <S><SAPlans /></S> },
       { path: 'billing',       element: <S><SABilling /></S> },
       { path: 'payment-credentials', element: <S><SAPaymentCredentials /></S> },
+      { path: 'payment-credentials/approvals/:token', element: <S><SAPaymentCredentialApproval /></S> },
       { path: 'verifications', element: <S><SAVerifications /></S> },
       { path: 'users',         element: <S><SAUsers /></S> },
       { path: 'audit-logs',    element: <S><SAAuditLogs /></S> },

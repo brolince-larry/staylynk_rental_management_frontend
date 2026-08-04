@@ -23,6 +23,7 @@ let _getToken:               (() => string | null) | null = null
 let _onUnauthorized:         (() => void) | null          = null
 let _onSessionTimeout:       (() => void) | null          = null
 let _onForbidden:            (() => void) | null          = null
+let _onPasswordChangeRequired: (() => void) | null        = null
 let _onSubscriptionRequired: (() => void) | null          = null
 
 export function configureApiClient(opts: {
@@ -30,12 +31,14 @@ export function configureApiClient(opts: {
   onUnauthorized:          () => void
   onSessionTimeout?:       () => void
   onForbidden:             () => void
+  onPasswordChangeRequired?: () => void
   onSubscriptionRequired?: () => void
 }): void {
   _getToken               = opts.getToken
   _onUnauthorized         = opts.onUnauthorized
   _onSessionTimeout       = opts.onSessionTimeout ?? null
   _onForbidden            = opts.onForbidden
+  _onPasswordChangeRequired = opts.onPasswordChangeRequired ?? null
   _onSubscriptionRequired = opts.onSubscriptionRequired ?? null
 }
 
@@ -116,6 +119,15 @@ apiClient.interceptors.response.use(
       return Promise.reject(makeError(
         403,
         response?.data?.message ?? 'Access denied.',
+        response?.data?.errors,
+        response?.data?.data ?? response?.data
+      ))
+    }
+    if (status === 423) {
+      _onPasswordChangeRequired?.()
+      return Promise.reject(makeError(
+        423,
+        response?.data?.message ?? 'You must set a new password before continuing.',
         response?.data?.errors,
         response?.data?.data ?? response?.data
       ))

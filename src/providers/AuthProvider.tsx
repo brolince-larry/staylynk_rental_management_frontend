@@ -28,6 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
   const { setAuth, clearAuth, setInitialising, token } = useAuthStore()
   const navigate = useNavigate()
   const [sessionExpired, setSessionExpired] = useState(false)
+  const [mustChangePassword, setMustChangePassword] = useState(false)
   const [idleWarning, setIdleWarning] = useState(false)
   const [countdown, setCountdown] = useState(60)
   const warnTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -50,6 +51,9 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
       },
       onForbidden: () => {
         // Stay on page — component renders AccessDenied via RoleGuard
+      },
+      onPasswordChangeRequired: () => {
+        setMustChangePassword(true)
       },
       onSubscriptionRequired: () => {
         // Only the org owner (admin) can act on billing — managers/staff just
@@ -172,6 +176,9 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
           navigate('/login', { replace: true })
         }} />
       )}
+      {mustChangePassword && (
+        <ForcePasswordChangeModal onSuccess={() => setMustChangePassword(false)} />
+      )}
     </>
   )
 }
@@ -228,6 +235,96 @@ function IdleWarningModal({
   )
 }
 
+function ForcePasswordChangeModal({ onSuccess }: { onSuccess: () => void }): React.ReactElement {
+  useBodyScrollLock(true)
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.')
+      return
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const { authApi } = await import('@/api/auth')
+      await authApi.forceChangePassword({ password, password_confirmation: confirmPassword })
+      onSuccess()
+    } catch (err) {
+      const { isApiError } = await import('@/utils/errors')
+      setError(isApiError(err) ? err.message : 'Failed to update password. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="force-password-title"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+    >
+      <div className="mx-4 w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-xl">
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+          <span className="text-2xl" aria-hidden>🔒</span>
+        </div>
+        <h2 id="force-password-title" className="mb-1 text-lg font-semibold text-foreground">
+          Set a new password
+        </h2>
+        <p className="mb-4 text-sm text-muted-foreground">
+          For security, you must set a new password before continuing.
+        </p>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label htmlFor="new-password" className="mb-1 block text-xs font-medium text-muted-foreground">
+              New password
+            </label>
+            <input
+              id="new-password"
+              type="password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="confirm-password" className="mb-1 block text-xs font-medium text-muted-foreground">
+              Confirm new password
+            </label>
+            <input
+              id="confirm-password"
+              type="password"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+              required
+            />
+          </div>
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {submitting ? 'Updating…' : 'Set password'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
 function SessionTimeoutModal({ onLogin }: { onLogin: () => void }): React.ReactElement {
   useBodyScrollLock(true)
   return (

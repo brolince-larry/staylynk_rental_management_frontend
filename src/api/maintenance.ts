@@ -81,19 +81,19 @@ export const maintenanceApi = {
       stripPropertyId(params) as Record<string, unknown>
     ),
 
-  get: (id: string) =>
+  get: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/manager/maintenance/${id}`),
 
   create: (data: MaintenancePayload) =>
     apiPost<Record<string, unknown>>('/manager/maintenance', stripPropertyId(data)),
 
-  update: (id: string, data: Partial<MaintenancePayload>) =>
+  update: (id: string | number, data: Partial<MaintenancePayload>) =>
     apiPatch<Record<string, unknown>>(`/manager/maintenance/${id}`, stripPropertyId(data)),
 
-  delete: (id: string) =>
+  delete: (id: string | number) =>
     apiDelete(`/manager/maintenance/${id}`),
 
-  assign: (id: string, assigned_to: number) =>
+  assign: (id: string | number, assigned_to: number) =>
     apiPatch<{ id: number; status: string; assigned_at: string }>(
       `/manager/maintenance/${id}/assign`,
       { assigned_to }
@@ -104,7 +104,7 @@ export const maintenanceApi = {
       `/manager/maintenance/${id}/progress`
     ),
 
-  resolve: (id: string, data: ResolvePayload) =>
+  resolve: (id: string | number, data: ResolvePayload) =>
     apiPatch<{ id: number; status: string; resolved_at: string }>(
       `/manager/maintenance/${id}/resolve`,
       data

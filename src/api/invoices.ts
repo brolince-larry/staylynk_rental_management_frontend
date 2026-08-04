@@ -32,13 +32,27 @@ export interface InvoicePayload {
 
 // ─── Response shapes ──────────────────────────────────────────────────────
 export interface InvoiceSummary {
-  total_count:    number
-  total_amount:   number
-  paid_amount:    number
-  pending_amount: number
-  overdue_count:  number
-  overdue_amount: number
-  void_count:     number
+  month:            string
+  total_invoices:   number
+  total_expected:   number
+  total_collected:  number
+  total_pending:    number
+  collection_rate:  number
+  by_status: {
+    paid:    number
+    partial: number
+    pending: number
+    overdue: number
+  }
+  by_property: Array<{
+    property_id:     number
+    property_name:   string
+    invoices:        number
+    expected:        number
+    collected:       number
+    pending:         number
+    collection_rate: number
+  }>
 }
 
 export interface GenerateMonthlyResult {
@@ -57,16 +71,16 @@ export const invoicesApi = {
       params as Record<string, unknown>
     ),
 
-  get: (id: string) =>
+  get: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/admin/invoices/${id}`),
 
   create: (data: InvoicePayload) =>
     apiPost<Record<string, unknown>>('/admin/invoices', data),
 
-  update: (id: string, data: Partial<InvoicePayload>) =>
+  update: (id: string | number, data: Partial<InvoicePayload>) =>
     apiPatch<Record<string, unknown>>(`/admin/invoices/${id}`, data),
 
-  delete: (id: string) =>
+  delete: (id: string | number) =>
     apiDelete(`/admin/invoices/${id}`),
 
   generateMonthly: (invoice_month: string) =>
@@ -75,18 +89,18 @@ export const invoicesApi = {
       { invoice_month }
     ),
 
-  void: (id: string, reason: string) =>
-    apiPatch<{ id: string; status: string }>(
+  void: (id: string | number, reason: string) =>
+    apiPatch<{ id: string | number; status: string }>(
       `/admin/invoices/${id}/void`,
       { reason }
     ),
 
-  send: (id: string) =>
-    apiPost<{ id: string; sent_at: string }>(
+  send: (id: string | number) =>
+    apiPost<{ id: string | number; sent_at: string }>(
       `/admin/invoices/${id}/send`
     ),
 
-  download: (id: string) =>
+  download: (id: string | number) =>
     apiGet<{ url?: string; expires_in?: string }>(`/admin/invoices/${id}/download`),
 
   summary: (params?: { property_id?: number | 'all'; month?: string }) =>
@@ -109,9 +123,9 @@ export const invoicesApi = {
       params as Record<string, unknown>
     ),
 
-  tenantGet: (id: string) =>
+  tenantGet: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/tenant/invoices/${id}`),
 
-  tenantDownload: (id: string) =>
+  tenantDownload: (id: string | number) =>
     apiGet<{ url?: string; expires_in?: string }>(`/tenant/invoices/${id}/download`),
 }

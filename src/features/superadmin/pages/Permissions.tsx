@@ -228,7 +228,7 @@ export default function Permissions(): React.ReactElement {
           </ul>
         </SectionCard>
       </div>
-      <ToastContainer toasts={toasts} onDismiss={dismiss} />
+      <ToastContainer toasts={toasts} dismiss={dismiss} />
     </>
   )
 }

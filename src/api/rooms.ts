@@ -168,19 +168,19 @@ export const roomsApi = {
       params as Record<string, unknown>
     ),
 
-  get: (id: string) =>
+  get: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/admin/rooms/${id}`),
 
   create: (data: RoomPayloadInput) =>
     apiPost<Record<string, unknown>>('/admin/rooms', normalizeRoomPayload(data, true)),
 
-  update: (id: string, data: RoomPayloadInput) =>
+  update: (id: string | number, data: RoomPayloadInput) =>
     apiPatch<Record<string, unknown>>(`/admin/rooms/${id}`, normalizeRoomPayload(data)),
 
-  delete: (id: string) =>
+  delete: (id: string | number) =>
     apiDelete(`/admin/rooms/${id}`),
 
-  updateStatus: (id: string, status: RoomStatus) =>
+  updateStatus: (id: string | number, status: RoomStatus) =>
     apiPatch<{ id: number; status: RoomStatus }>(
       `/admin/rooms/${id}/status`,
       { status }
@@ -195,25 +195,25 @@ export const roomsApi = {
       params as Record<string, unknown>
     ),
 
-  managerGet: (id: string) =>
+  managerGet: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/manager/rooms/${id}`),
 
   managerCreate: (data: RoomPayloadInput) =>
     apiPost<Record<string, unknown>>('/manager/rooms', normalizeRoomPayload(data, true)),
 
-  managerUpdate: (id: string, data: RoomPayloadInput) =>
+  managerUpdate: (id: string | number, data: RoomPayloadInput) =>
     apiPatch<Record<string, unknown>>(`/manager/rooms/${id}`, normalizeRoomPayload(data)),
 
-  managerDelete: (id: string) =>
+  managerDelete: (id: string | number) =>
     apiDelete(`/manager/rooms/${id}`),
 
-  managerUpdateStatus: (id: string, status: RoomStatus) =>
-    apiPatch<{ id: string; status: RoomStatus }>(
+  managerUpdateStatus: (id: string | number, status: RoomStatus) =>
+    apiPatch<{ id: string | number; status: RoomStatus }>(
       `/manager/rooms/${id}/status`,
       { status }
     ),
 
-  managerAddBeds: (id: string, beds: string[]) =>
+  managerAddBeds: (id: string | number, beds: string[]) =>
     apiPost<Record<string, unknown>[]>(`/manager/rooms/${id}/beds`, { beds }),
 
   managerNextNumber: () =>
@@ -222,13 +222,13 @@ export const roomsApi = {
   managerRemoveBed: (roomId: string, bedId: string) =>
     apiDelete(`/manager/rooms/${roomId}/beds/${bedId}`),
 
-  availability: (id: string, from: string, to: string) =>
+  availability: (id: string | number, from: string, to: string) =>
     apiGet<RoomAvailability>(
       `/admin/rooms/${id}/availability`,
       { from, to }
     ),
 
-  addBeds: (id: string, beds: string[]) =>
+  addBeds: (id: string | number, beds: string[]) =>
     apiPost<Record<string, unknown>[]>(
       `/admin/rooms/${id}/beds`,
       { beds }

@@ -1,12 +1,12 @@
 // src/features/admin/pages/Properties.tsx
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { useSearchParams } from 'react-router-dom'
-import { Building2, CheckCircle, Eye, Loader2, MapPin, MoreVertical, Navigation, Pencil, Plus, Trash2, Wrench, X } from 'lucide-react'
+import { Building2, CheckCircle, Clock, Eye, Loader2, MapPin, MoreVertical, Navigation, Pencil, Plus, RotateCcw, Trash2, Wrench, X } from 'lucide-react'
 import { useForm, type Resolver, type UseFormReturn, type Path } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { isApiError } from '@/utils/errors'
-import { useProperties, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus } from '../hooks/useProperties'
+import { useProperties, useCreateProperty, useUpdateProperty, useDeleteProperty, useUpdatePropertyStatus, useDeletedProperties, useRestoreProperty } from '../hooks/useProperties'
 import { useDebounce, usePagination, useToast } from '@/hooks'
 import { DataTable, type ColumnDef, type SortState } from '@/components/tables/DataTable'
 import { SearchInput, FilterBar, Select, Modal, Button, FormField, Input, Textarea, ConfirmDialog, ToastContainer } from '@/components/forms'
@@ -15,7 +15,7 @@ import { mediaService, type MediaItem } from '@/services/media'
 import { PageHeader, StatusBadge, ProgressBar } from '@/components/ui'
 import { propertySchema, type PropertySchema } from '@/schemas/property.schema'
 import { HOUSE_TYPE_OPTIONS } from '@/api/listings'
-import { propertiesApi, type Property, type PropertyInput } from '@/api/properties'
+import { propertiesApi, type Property, type PropertyInput, type DeletedProperty } from '@/api/properties'
 import { formatDate } from '@/utils/format'
 import { PropertyVideoManager } from '../components/PropertyVideoManager'
 
@@ -64,6 +64,8 @@ export default function Properties(): React.ReactElement {
   const [deleteProperty, setDeleteProperty] = useState<Property | null>(null)
   const [statusAction, setStatusAction] = useState<{ property: Property; status: string } | null>(null)
   const [menuAnchor, setMenuAnchor] = useState<{ id: string; row: Property; top: number; right: number } | null>(null)
+  const [tab, setTab] = useState<'active' | 'deleted'>('active')
+  const [restoreTarget, setRestoreTarget] = useState<DeletedProperty | null>(null)
   const [propertyMedia, setPropertyMedia] = useState<MediaItem[]>([])
   const [coverFiles, setCoverFiles] = useState<File[]>([])
   const [galleryFiles, setGalleryFiles] = useState<File[]>([])
@@ -87,7 +89,10 @@ export default function Properties(): React.ReactElement {
   const { mutate: create, isPending: creating } = useCreateProperty()
   const { mutate: updateProperty, isPending: updating } = useUpdateProperty(editProperty?.id ?? '')
   const { mutate: deletePropertyMutation, isPending: deleting } = useDeleteProperty()
+  const [otpModal, setOtpModal] = useState<{ approvalId: string; kind: 'property' } | null>(null)
   const { mutate: updateStatus, isPending: changingStatus } = useUpdatePropertyStatus(statusAction?.property.id ?? '')
+  const { data: deletedProperties, isLoading: deletedLoading, isError: deletedIsError } = useDeletedProperties()
+  const { mutate: restoreProperty, isPending: restoring } = useRestoreProperty()
 
   const form = useForm<PropertySchema>({
     resolver: zodResolver(propertySchema) as Resolver<PropertySchema>,
@@ -382,6 +387,44 @@ export default function Properties(): React.ReactElement {
     },
   ]
 
+  const deletedColumns: ColumnDef<DeletedProperty>[] = [
+    {
+      key: 'name', header: 'Property',
+      accessor: (row) => (
+        <div>
+          <p className="text-xs font-semibold text-foreground">{row.name}</p>
+          <div className="flex items-center gap-1 mt-0.5">
+            <MapPin className="h-2.5 w-2.5 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground">{[row.address, row.city].filter(Boolean).join(', ') || '—'}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'deleted_at', header: 'Deleted',
+      accessor: (row) => <span className="text-xs text-muted-foreground">{row.deleted_at ? formatDate(row.deleted_at) : '—'}</span>,
+    },
+    {
+      key: 'scheduled_purge_at', header: 'Time Remaining',
+      accessor: (row) => (
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <Clock className="h-3 w-3" />
+          {formatTimeRemaining(row.scheduled_purge_at, row.can_restore)}
+        </span>
+      ),
+    },
+    {
+      key: 'actions', header: 'Actions', align: 'right',
+      accessor: (row) => (
+        <div className="inline-flex justify-end">
+          <Button size="sm" variant="outline" disabled={!row.can_restore} onClick={() => setRestoreTarget(row)}>
+            <RotateCcw className="h-3.5 w-3.5" /> Restore
+          </Button>
+        </div>
+      ),
+    },
+  ]
+
   return (
     <>
       <Helmet><title>Properties — StayLynk</title></Helmet>
@@ -433,17 +476,37 @@ export default function Properties(): React.ReactElement {
           subtitle="All properties across your organisation."
           actions={<Button onClick={() => { form.reset(propertyFormDefaults); setCreateOpen(true) }}><Plus className="h-3.5 w-3.5" /> Add Property</Button>}
         />
-        <FilterBar>
-          <SearchInput value={search} onChange={setSearch} placeholder="Search name, city…" className="w-64" />
-          <Select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }} placeholder="All statuses" className="w-36 text-xs"
-            options={[{ value:'', label:'All' }, { value:'active', label:'Active' }, { value:'inactive', label:'Inactive' }, { value:'maintenance', label:'Maintenance' }]} />
-        </FilterBar>
-        <DataTable columns={columns} data={rows} keyField="id" loading={isLoading}
-          error={isError ? 'Failed to load properties.' : null}
-          emptyTitle="No properties yet" emptyDescription="Add your first property to get started."
-          sort={sort} onSort={(col, dir) => { setSort({ column: col, direction: dir }); setPage(1) }}
-          pagination={meta} onPageChange={setPage} onPerPageChange={setPerPage} caption="Properties list"
-        />
+        <div className="mb-4 inline-flex rounded-lg border border-border bg-muted/30 p-1">
+          <button type="button" onClick={() => setTab('active')}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${tab === 'active' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+            Properties
+          </button>
+          <button type="button" onClick={() => setTab('deleted')}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${tab === 'deleted' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+            Deleted{deletedProperties && deletedProperties.length > 0 ? ` (${deletedProperties.length})` : ''}
+          </button>
+        </div>
+        {tab === 'active' ? (
+          <>
+            <FilterBar>
+              <SearchInput value={search} onChange={setSearch} placeholder="Search name, city…" className="w-64" />
+              <Select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }} placeholder="All statuses" className="w-36 text-xs"
+                options={[{ value:'', label:'All' }, { value:'active', label:'Active' }, { value:'inactive', label:'Inactive' }, { value:'maintenance', label:'Maintenance' }]} />
+            </FilterBar>
+            <DataTable columns={columns} data={rows} keyField="id" loading={isLoading}
+              error={isError ? 'Failed to load properties.' : null}
+              emptyTitle="No properties yet" emptyDescription="Add your first property to get started."
+              sort={sort} onSort={(col, dir) => { setSort({ column: col, direction: dir }); setPage(1) }}
+              pagination={meta} onPageChange={setPage} onPerPageChange={setPerPage} caption="Properties list"
+            />
+          </>
+        ) : (
+          <DataTable columns={deletedColumns} data={deletedProperties ?? []} keyField="id" loading={deletedLoading}
+            error={deletedIsError ? 'Failed to load deleted properties.' : null}
+            emptyTitle="No deleted properties" emptyDescription="Properties you delete appear here for 48 hours before permanent removal."
+            caption="Deleted properties list"
+          />
+        )}
       </div>
 
       <Modal open={createOpen} onClose={resetCreateForm}
@@ -739,9 +802,18 @@ export default function Properties(): React.ReactElement {
           const id = deleteProperty?.id
           if (!id) return
           deletePropertyMutation(id, {
-            onSuccess: () => {
-              success('Property deleted')
+            onSuccess: (response) => {
+              const data = response.data as unknown as { approval_id?: string; email_sent?: boolean } | undefined
               setDeleteProperty(null)
+              if (data?.approval_id) {
+                if (data.email_sent === false) {
+                  toastError('Approval email could not be sent. Contact support.', 'Deletion request created')
+                  return
+                }
+                setOtpModal({ approvalId: data.approval_id, kind: 'property' })
+                return
+              }
+              success('Property deleted')
             },
             onError: (err) => toastError(err, 'Failed to delete property'),
           })
@@ -752,9 +824,115 @@ export default function Properties(): React.ReactElement {
         variant="destructive"
         loading={deleting}
       />
+      <ConfirmDialog
+        open={!!restoreTarget}
+        onClose={() => setRestoreTarget(null)}
+        onConfirm={() => {
+          const uuid = restoreTarget?.id
+          if (!uuid) return
+          restoreProperty(uuid, {
+            onSuccess: () => {
+              success(`${restoreTarget?.name ?? 'Property'} restored`)
+              setRestoreTarget(null)
+            },
+            onError: (err) => toastError(err, 'Failed to restore property'),
+          })
+        }}
+        title="Restore Property"
+        description={`Restore ${String(restoreTarget?.name ?? 'this property')}? It will become active again immediately.`}
+        confirmLabel="Restore"
+        loading={restoring}
+      />
+      {otpModal && (
+        <PropertyOtpVerifyModal
+          approvalId={otpModal.approvalId}
+          onClose={() => setOtpModal(null)}
+          onVerified={() => {
+            setOtpModal(null)
+            success('Property deleted. It can be restored within 48 hours from the deleted properties list.')
+          }}
+        />
+      )}
     </>
   )
 }
+function PropertyOtpVerifyModal({
+  approvalId,
+  onClose,
+  onVerified,
+}: {
+  approvalId: string
+  onClose: () => void
+  onVerified: () => void
+}): React.ReactElement {
+  const [digits, setDigits] = useState<string[]>(['', '', '', '', '', ''])
+  const [error, setError] = useState<string | null>(null)
+  const [verifying, setVerifying] = useState(false)
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([])
+
+  const submit = async (code: string) => {
+    setVerifying(true)
+    setError(null)
+    try {
+      await propertiesApi.verifyDeletion(approvalId, code)
+      onVerified()
+    } catch (err) {
+      setError(isApiError(err) ? err.message : 'Verification failed. Please try again.')
+      setDigits(['', '', '', '', '', ''])
+      inputRefs.current[0]?.focus()
+    } finally {
+      setVerifying(false)
+    }
+  }
+
+  const handleChange = (index: number, value: string) => {
+    const char = value.replace(/\D/g, '').slice(-1)
+    const next = [...digits]
+    next[index] = char
+    setDigits(next)
+    if (char && index < 5) {
+      inputRefs.current[index + 1]?.focus()
+    }
+    if (char && index === 5) {
+      const code = next.join('')
+      if (code.length === 6) void submit(code)
+    }
+  }
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !digits[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus()
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Confirm property deletion" size="sm">
+      <p className="mb-4 text-sm text-muted-foreground">
+        A 6-digit code was sent to your organisation admin email(s). It expires in 3 minutes.
+        The property can be restored within 48 hours after confirming.
+      </p>
+      <div className="flex justify-center gap-2">
+        {digits.map((d, i) => (
+          <input
+            key={i}
+            ref={(el) => { inputRefs.current[i] = el }}
+            type="text"
+            inputMode="numeric"
+            maxLength={1}
+            value={d}
+            disabled={verifying}
+            onChange={(e) => handleChange(i, e.target.value)}
+            onKeyDown={(e) => handleKeyDown(i, e)}
+            className="h-12 w-10 rounded-lg border border-border bg-background text-center text-lg font-semibold text-foreground disabled:opacity-50"
+          />
+        ))}
+      </div>
+      {error && <p className="mt-3 text-center text-sm text-red-500">{error}</p>}
+      {verifying && <p className="mt-3 text-center text-sm text-muted-foreground">Verifying…</p>}
+    </Modal>
+  )
+}
+
 
 // Nominatim geocoding — called from browser, no API key needed
 async function nominatimGeocode(name: string, address: string, city: string, county: string, country: string): Promise<{ lat: number; lng: number; display_name: string } | null> {
@@ -1045,6 +1223,17 @@ function buildPropertyPayload(values: PropertySchema): PropertyInput {
 function houseTypeLabel(value?: string | null): string {
   if (!value) return '—'
   return HOUSE_TYPE_OPTIONS.find((option) => option.value === value)?.label ?? String(value)
+}
+
+function formatTimeRemaining(scheduledPurgeAt: string | null, canRestore: boolean): string {
+  if (!canRestore) return 'Purged'
+  if (!scheduledPurgeAt) return '—'
+  const diffMs = new Date(scheduledPurgeAt).getTime() - Date.now()
+  if (diffMs <= 0) return 'Purging soon'
+  const hours = Math.floor(diffMs / (1000 * 60 * 60))
+  const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+  if (hours >= 1) return `${hours}h ${minutes}m left`
+  return `${minutes}m left`
 }
 
 function formatRange(min?: number | null, max?: number | null): string {

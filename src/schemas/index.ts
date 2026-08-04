@@ -95,6 +95,7 @@ export const tenantSchema = z.object({
   room_uuid:               z.string().optional(),
   room_number:             z.string().max(50).optional(),
   move_in_date:            z.string().optional(),
+  first_payment_due_date:  z.string().optional(),
   lease_status:            z.enum(['pending', 'active', 'expired', 'terminated', 'cancelled']).optional(),
   emergency_name:          z.string().max(150).optional(),
   emergency_phone:         z.string().max(20).optional(),

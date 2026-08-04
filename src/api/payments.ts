@@ -75,7 +75,7 @@ export interface RecordRentResult {
 
 export interface MpesaInitiateResult {
   payment: {
-    id: string
+    id: string | number
     payment_reference: string
     amount: number
     method: 'mpesa'
@@ -98,18 +98,18 @@ export const paymentsApi = {
       params as Record<string, unknown>
     ),
 
-  get: (id: string) =>
+  get: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/admin/payments/${id}`),
 
   create: (data: PaymentPayload) =>
     apiPost<Record<string, unknown>>('/admin/payments', data),
 
-  reverse: (id: string) =>
-    apiDelete<{ id: string; status: string; invoice_balance: number }>(
+  reverse: (id: string | number) =>
+    apiDelete<{ id: string | number; status: string; invoice_balance: number }>(
       `/admin/payments/${id}`
     ),
 
-  receipt: (id: string) =>
+  receipt: (id: string | number) =>
     apiGet<{ url?: string; expires_in?: string }>(`/admin/payments/${id}/receipt`),
 
   summary: (params?: { property_id?: string | 'all'; month?: string }) =>
@@ -156,7 +156,7 @@ export const paymentsApi = {
   managerCreate: (data: PaymentPayload) =>
     apiPost<Record<string, unknown>>('/manager/payments', data),
 
-  managerReceipt: (id: string) =>
+  managerReceipt: (id: string | number) =>
     apiGet<{ url?: string; expires_in?: string }>(`/manager/payments/${id}/receipt`),
 
   // ── Tenant ───────────────────────────────────────────────────────
@@ -166,7 +166,7 @@ export const paymentsApi = {
       params as Record<string, unknown>
     ),
 
-  tenantReceipt: (id: string) =>
+  tenantReceipt: (id: string | number) =>
     apiGet<{ url?: string; expires_in?: string }>(`/tenant/payments/${id}/receipt`),
 
   initiateMpesa: (invoiceId: number, phone_number: string, amount?: number) =>
@@ -192,22 +192,22 @@ export const paymentsApi = {
   },
 
   // ── Bank transfer review (admin) ─────────────────────────────────
-  adminApproveBankTransfer: (id: string) =>
+  adminApproveBankTransfer: (id: string | number) =>
     apiPatch<Record<string, unknown>>(`/admin/payments/${id}/approve`, {}),
 
-  adminRejectBankTransfer: (id: string, reason: string) =>
+  adminRejectBankTransfer: (id: string | number, reason: string) =>
     apiPatch<Record<string, unknown>>(`/admin/payments/${id}/reject`, { reason }),
 
-  adminBankReceipt: (id: string) =>
+  adminBankReceipt: (id: string | number) =>
     apiGet<{ url: string; expires_in?: string }>(`/admin/payments/${id}/bank-receipt`),
 
   // ── Bank transfer review (manager) ───────────────────────────────
-  managerApproveBankTransfer: (id: string) =>
+  managerApproveBankTransfer: (id: string | number) =>
     apiPatch<Record<string, unknown>>(`/manager/payments/${id}/approve`, {}),
 
-  managerRejectBankTransfer: (id: string, reason: string) =>
+  managerRejectBankTransfer: (id: string | number, reason: string) =>
     apiPatch<Record<string, unknown>>(`/manager/payments/${id}/reject`, { reason }),
 
-  managerBankReceipt: (id: string) =>
+  managerBankReceipt: (id: string | number) =>
     apiGet<{ url: string; expires_in?: string }>(`/manager/payments/${id}/bank-receipt`),
 }

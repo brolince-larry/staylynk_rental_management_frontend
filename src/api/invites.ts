@@ -66,7 +66,7 @@ export interface RegisterResult {
 // ── Admin interfaces ─────────────────────────────────────────────────────────
 
 export interface InviteItem {
-  id: string
+  id: string | number
   registration_url: string
   status: 'pending' | 'used' | 'expired' | 'revoked' | string
   expiry_days: number
@@ -77,7 +77,7 @@ export interface InviteItem {
   used_at?: string | null
   created_at: string
   room?: {
-    id: string
+    id: string | number
     room_number: string
     floor?: string | null
     block?: string | null
@@ -86,11 +86,11 @@ export interface InviteItem {
     room_type?: string | null
   } | null
   invited_by?: {
-    id: string
+    id: string | number
     name: string
   } | null
   used_by?: {
-    id: string
+    id: string | number
     name: string
     lease_uuid?: string | null
   } | null

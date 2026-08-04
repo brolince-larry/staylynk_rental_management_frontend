@@ -116,53 +116,70 @@ export interface Property {
 export type PropertyPayload = PropertyInput
 export type PropertyOption = Pick<Property, 'id' | 'uuid' | 'name' | 'slug'> & Record<string, unknown>
 
+export interface DeletedProperty {
+  id: string
+  name: string
+  address: string | null
+  city: string | null
+  deleted_at: string | null
+  scheduled_purge_at: string | null
+  can_restore: boolean
+}
+
 export const propertiesApi = {
   list: (params: PropertyFilters = {}) =>
     apiGet<PaginatedResponse<Property>>('/admin/properties', params as Record<string, unknown>),
 
-  get: (id: string) =>
+  get: (id: string | number) =>
     apiGet<Property>(`/admin/properties/${id}`),
 
   create: (data: PropertyInput) =>
     apiPost<Property>('/admin/properties', data),
 
-  update: (id: string, data: Partial<PropertyInput>) =>
+  update: (id: string | number, data: Partial<PropertyInput>) =>
     apiPatch<Property>(`/admin/properties/${id}`, data),
 
-  delete: (id: string) =>
+  delete: (id: string | number) =>
     apiDelete(`/admin/properties/${id}`),
 
-  stats: (id: string) =>
+  verifyDeletion: (approvalId: string, code: string) =>
+    apiPost(`/admin/properties/deletions/${approvalId}/verify`, { code }),
+  restore: (uuid: string) =>
+    apiPost(`/admin/properties/${uuid}/restore`),
+  listDeleted: () =>
+    apiGet<{ data: DeletedProperty[] }>('/admin/properties/deleted'),
+
+  stats: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/admin/properties/${id}/stats`),
 
-  updateStatus: (id: string, status: string) =>
+  updateStatus: (id: string | number, status: string) =>
     apiPatch<{ id: number; status: string }>(`/admin/properties/${id}/status`, { status }),
 
   options: () =>
     apiGet<PropertyOption[] | PaginatedResponse<PropertyOption>>('/admin/properties/options'),
 
-  setCurrent: (id: string) =>
+  setCurrent: (id: string | number) =>
     apiPost<Record<string, unknown>>(`/admin/properties/${id}/current`),
 
   managerList: (params: PropertyFilters = {}) =>
     apiGet<PaginatedResponse<Record<string, unknown>>>('/manager/properties', params as Record<string, unknown>),
 
-  managerGet: (id: string) =>
+  managerGet: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/manager/properties/${id}`),
 
   managerOptions: () =>
     apiGet<PropertyOption[] | PaginatedResponse<PropertyOption>>('/manager/properties/options'),
 
-  managerUpdateStatus: (id: string, status: string) =>
-    apiPatch<{ id: string; status: string }>(`/manager/properties/${id}/status`, { status }),
+  managerUpdateStatus: (id: string | number, status: string) =>
+    apiPatch<{ id: string | number; status: string }>(`/manager/properties/${id}/status`, { status }),
 
-  managerSetCurrent: (id: string) =>
+  managerSetCurrent: (id: string | number) =>
     apiPost<Record<string, unknown>>(`/manager/properties/${id}/current`),
 
-  syncFacilities: (id: string, facilities: string[]) =>
+  syncFacilities: (id: string | number, facilities: string[]) =>
     apiPost<Record<string, unknown>[]>(`/admin/properties/${id}/facilities`, { facilities }),
 
-  syncHouseRules: (id: string, rules: string[]) =>
+  syncHouseRules: (id: string | number, rules: string[]) =>
     apiPost<string[]>(`/admin/properties/${id}/house-rules`, { rules }),
 }
 
@@ -197,19 +214,19 @@ export const roomsApi = {
   list: (params: RoomFilters = {}) =>
     apiGet<PaginatedResponse<Record<string, unknown>>>('/admin/rooms', params as Record<string, unknown>),
 
-  get: (id: string) =>
+  get: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/admin/rooms/${id}`),
 
   create: (data: RoomPayload) =>
     apiPost<Record<string, unknown>>('/admin/rooms', data),
 
-  update: (id: string, data: Partial<RoomPayload>) =>
+  update: (id: string | number, data: Partial<RoomPayload>) =>
     apiPatch<Record<string, unknown>>(`/admin/rooms/${id}`, data),
 
-  delete: (id: string) =>
+  delete: (id: string | number) =>
     apiDelete(`/admin/rooms/${id}`),
 
-  updateStatus: (id: string, status: string) =>
+  updateStatus: (id: string | number, status: string) =>
     apiPatch<{ id: number; status: string }>(`/admin/rooms/${id}/status`, { status }),
 
   availability: (id: number, from: string, to: string) =>
@@ -217,7 +234,7 @@ export const roomsApi = {
       `/admin/rooms/${id}/availability`, { from, to }
     ),
 
-  addBeds: (id: string, beds: string[]) =>
+  addBeds: (id: string | number, beds: string[]) =>
     apiPost<Record<string, unknown>[]>(`/admin/rooms/${id}/beds`, { beds }),
 
   removeBed: (roomId: string, bedId: string) =>

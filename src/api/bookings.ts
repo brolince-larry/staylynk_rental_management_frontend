@@ -70,47 +70,47 @@ export const bookingsApi = {
   managerList: (params: BookingFilters = {}) =>
     apiGet<PaginatedResponse<Record<string, unknown>>>('/manager/bookings', stripPropertyId(params) as Record<string, unknown>),
 
-  get: (id: string) =>
+  get: (id: string | number) =>
     apiGet<Record<string, unknown>>(`/admin/bookings/${id}`),
 
   create: (data: BookingPayload) =>
     apiPost<Record<string, unknown>>('/admin/bookings', stripPropertyId(data)),
 
-  update: (id: string, data: Partial<BookingPayload>) =>
+  update: (id: string | number, data: Partial<BookingPayload>) =>
     apiPatch<Record<string, unknown>>(`/admin/bookings/${id}`, stripPropertyId(data)),
 
-  confirm: (id: string) =>
+  confirm: (id: string | number) =>
     apiPatch<BookingConfirmResponse>(`/admin/bookings/${id}/confirm`),
 
-  reject: (id: string, rejection_reason: string) =>
+  reject: (id: string | number, rejection_reason: string) =>
     apiPatch<{ id: number; status: string }>(`/admin/bookings/${id}/reject`, { rejection_reason }),
 
-  checkIn: (id: string) =>
+  checkIn: (id: string | number) =>
     apiPatch<BookingCheckInResponse>(`/admin/bookings/${id}/check-in`),
 
-  checkOut: (id: string) =>
+  checkOut: (id: string | number) =>
     apiPatch<{ id: number; status: string; actual_check_out: string }>(`/admin/bookings/${id}/check-out`),
 
-  cancel: (id: string, reason: string) =>
+  cancel: (id: string | number, reason: string) =>
     apiPatch<{ id: number; status: string }>(`/admin/bookings/${id}/cancel`, { reason }),
 
-  noShow: (id: string) =>
+  noShow: (id: string | number) =>
     apiPatch<{ id: number; status: string }>(`/admin/bookings/${id}/no-show`),
 
   clearRejected: () =>
     apiDelete<{ deleted: number }>('/admin/bookings/rejected'),
 
   // Manager actions
-  managerConfirm: (id: string) =>
+  managerConfirm: (id: string | number) =>
     apiPatch<BookingConfirmResponse>(`/manager/bookings/${id}/confirm`),
 
-  managerReject: (id: string, rejection_reason: string) =>
+  managerReject: (id: string | number, rejection_reason: string) =>
     apiPatch<{ id: number; status: string }>(`/manager/bookings/${id}/reject`, { rejection_reason }),
 
-  managerNoShow: (id: string) =>
+  managerNoShow: (id: string | number) =>
     apiPatch<{ id: number; status: string }>(`/manager/bookings/${id}/no-show`),
 
-  managerCancel: (id: string, reason: string) =>
+  managerCancel: (id: string | number, reason: string) =>
     apiPatch<{ id: number; status: string }>(`/manager/bookings/${id}/cancel`, { reason }),
 
   managerClearRejected: () =>
@@ -123,9 +123,9 @@ export const bookingsApi = {
   checkInOutList: (params?: { type?: string; property_id?: string | 'all' }) =>
     apiGet<{ date: string; count: number; bookings: Record<string, unknown>[] }>('/manager/check-in-out', params ? stripPropertyId(params) as Record<string, unknown> : undefined),
 
-  managerCheckIn: (id: string) =>
+  managerCheckIn: (id: string | number) =>
     apiPatch<{ id: number; actual_check_in: string }>(`/manager/check-in-out/${id}/in`),
 
-  managerCheckOut: (id: string) =>
+  managerCheckOut: (id: string | number) =>
     apiPatch<{ id: number; actual_check_out: string }>(`/manager/check-in-out/${id}/out`),
 }
