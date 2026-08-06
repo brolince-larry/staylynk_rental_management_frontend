@@ -1,0 +1,40 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ~/apps/staylynk/frontend/management/app
+            git fetch origin
+            git checkout master
+            git pull origin master
+            cd ~/apps/staylynk/backend/api
+            docker compose build management-frontend
+            docker compose up -d management-frontend
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            sleep 5
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://app.staylynk.co.ke/)
+            echo "Production management app status: $STATUS"
+            if [ "$STATUS" != "200" ]; then
+              echo "WARNING: production returned $STATUS after deploy"
+              exit 1
+            fi

@@ -1,0 +1,70 @@
+name: CI - Build & Smoke Test
+
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production bundle
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: https://api.staylynk.co.ke
+          VITE_REVERB_APP_KEY: c372d2543d24547d967fc821339c260abb51abceb7d0e4cdd923c22b3a0b3356
+          VITE_REVERB_HOST: ws.staylynk.co.ke
+          VITE_REVERB_PORT: 443
+          VITE_REVERB_SCHEME: wss
+          VITE_MEDIA_CDN_URL: ''
+          VITE_PROPERTY_VIDEO_MAX_UPLOAD_KB: 102400
+          VITE_PUBLIC_SITE_URL: https://staylynk.co.ke
+
+      - name: Verify API URL is baked into bundle
+        run: |
+          if ! grep -r "api.staylynk.co.ke" dist/assets/*.js; then
+            echo "FAIL: api.staylynk.co.ke not found in build output - VITE_API_BASE_URL was not embedded"
+            exit 1
+          fi
+          echo "PASS: API base URL correctly embedded in bundle"
+
+      - name: Build Docker image
+        run: docker build -t staylynk-management:ci-test .
+
+      - name: Run container for smoke test
+        run: |
+          docker run -d --name smoke-test -p 8081:80 staylynk-management:ci-test
+          sleep 3
+
+      - name: Smoke test - app shell loads
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8081/)
+          if [ "$STATUS" != "200" ]; then
+            echo "FAIL: app returned $STATUS"
+            exit 1
+          fi
+          echo "PASS: app returned 200"
+
+      - name: Smoke test - noindex header present (management app must never be indexed)
+        run: |
+          if ! curl -s http://localhost:8081/ | grep -q 'noindex'; then
+            echo "FAIL: noindex meta tag missing - management app must not be publicly indexable"
+            exit 1
+          fi
+          echo "PASS: noindex confirmed"
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f smoke-test || true
