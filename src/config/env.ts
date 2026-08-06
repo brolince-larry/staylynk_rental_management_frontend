@@ -1,5 +1,5 @@
-const DEFAULT_PROPERTY_VIDEO_MAX_UPLOAD_KB = 102400
-const DEFAULT_API_BASE_URL = 'http://127.0.0.1'
+c
+onst DEFAULT_PROPERTY_VIDEO_MAX_UPLOAD_KB = 102400
 const API_VERSION_PREFIX = '/api/v1'
 
 function trimTrailingSlash(value: string): string {
@@ -34,9 +34,25 @@ function normalizeApiBaseUrl(value: string): string {
   return trimmed
 }
 
-export const apiBaseUrl = normalizeApiBaseUrl(
-  readString(import.meta.env.VITE_API_BASE_URL) ?? DEFAULT_API_BASE_URL,
-)
+function resolveApiBaseUrl(): string {
+  const configured = readString(import.meta.env.VITE_API_BASE_URL)
+
+  if (!configured) {
+    if (import.meta.env.PROD) {
+      // Fail the build loudly rather than silently pointing at localhost in prod.
+      throw new Error(
+        '[env] VITE_API_BASE_URL is not set. Refusing to build/run with an undefined API origin. ' +
+        'Ensure .env.production is present in the Docker build context (check .dockerignore).',
+      )
+    }
+    // Dev-only convenience default — never used in a production build.
+    return normalizeApiBaseUrl('http://127.0.0.1')
+  }
+
+  return normalizeApiBaseUrl(configured)
+}
+
+export const apiBaseUrl = resolveApiBaseUrl()
 
 const configuredMediaCdnUrl = readString(import.meta.env.VITE_MEDIA_CDN_URL)
 export const mediaCdnUrl = configuredMediaCdnUrl ? trimTrailingSlash(configuredMediaCdnUrl) : undefined
