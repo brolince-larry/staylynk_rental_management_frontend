@@ -1,5 +1,4 @@
-c
-onst DEFAULT_PROPERTY_VIDEO_MAX_UPLOAD_KB = 102400
+const DEFAULT_PROPERTY_VIDEO_MAX_UPLOAD_KB = 102400
 const API_VERSION_PREFIX = '/api/v1'
 
 function trimTrailingSlash(value: string): string {
