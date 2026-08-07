@@ -16,6 +16,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
+            set -euo pipefail
             cd ~/apps/staylynk/frontend/management/app
             git fetch origin
             git checkout master
@@ -41,6 +42,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
+            set -euo pipefail
             sleep 5
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://app.staylynk.co.ke/)
             echo "Production management app status: $STATUS"
