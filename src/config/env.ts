@@ -34,9 +34,17 @@ function normalizeApiBaseUrl(value: string): string {
   return trimmed
 }
 
-export const apiBaseUrl = normalizeApiBaseUrl(
-  readString(import.meta.env.VITE_API_BASE_URL) ?? DEFAULT_API_BASE_URL,
-)
+function resolveApiBaseUrl(): string {
+  const configured = readString(import.meta.env.VITE_API_BASE_URL)
+  if (configured) return configured
+  if (import.meta.env.DEV) return DEFAULT_API_BASE_URL
+  throw new Error(
+    'VITE_API_BASE_URL is not set. Refusing to fall back to a local default in a production build ' +
+    '— check that .env.production is present in the Docker build context.',
+  )
+}
+
+export const apiBaseUrl = normalizeApiBaseUrl(resolveApiBaseUrl())
 
 const configuredMediaCdnUrl = readString(import.meta.env.VITE_MEDIA_CDN_URL)
 export const mediaCdnUrl = configuredMediaCdnUrl ? trimTrailingSlash(configuredMediaCdnUrl) : undefined
