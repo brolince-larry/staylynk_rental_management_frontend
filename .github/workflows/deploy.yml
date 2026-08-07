@@ -21,7 +21,17 @@ jobs:
             git checkout master
             git pull origin master
             cd ~/apps/staylynk/backend/api
-            docker compose build management-frontend
+              for i in 1 2 3; do
+              if docker compose build management-frontend; then
+                break
+              fi
+              if [ "$i" -eq 3 ]; then
+                echo "ERROR: build failed after 3 attempts"
+                exit 1
+              fi
+              echo "Build attempt $i failed, retrying in 10s..."
+              sleep 10
+            done
             docker compose up -d management-frontend
 
       - name: Verify deployment
