@@ -8,7 +8,12 @@ import { authApi } from '@/api/auth'
 import { normalizeDashboardPath } from '@/auth/routeAccess'
 import { useAuthStore } from '@/store/auth.store'
 import { registerSchema, type RegisterSchema } from '@/schemas/auth.schema'
-import { isApiError } from '@/utils/errors'
+import { getErrorMessage, isApiError } from '@/utils/errors'
+
+const REGISTER_FORM_FIELDS = new Set<keyof RegisterSchema>([
+  'org_name', 'org_phone', 'name', 'email',
+  'password', 'password_confirmation', 'country', 'terms_accepted',
+])
 
 export default function RegisterPage(): React.ReactElement {
   const [showPwd,     setShowPwd]     = useState(false)
@@ -23,6 +28,7 @@ export default function RegisterPage(): React.ReactElement {
     register,
     handleSubmit,
     watch,
+    setError,
     formState: { errors },
   } = useForm<RegisterSchema>({ resolver: zodResolver(registerSchema) })
 
@@ -40,7 +46,16 @@ export default function RegisterPage(): React.ReactElement {
         navigate(normalizeDashboardPath(res.data.user), { replace: true })
       }
     } catch (err: unknown) {
-      setServerError(isApiError(err) ? err.message : 'Registration failed. Please try again.')
+      let mappedToField = false
+      if (isApiError(err) && !Array.isArray(err.errors)) {
+        Object.entries(err.errors).forEach(([field, messages]) => {
+          if (REGISTER_FORM_FIELDS.has(field as keyof RegisterSchema) && messages[0]) {
+            setError(field as keyof RegisterSchema, { message: messages[0] })
+            mappedToField = true
+          }
+        })
+      }
+      if (!mappedToField) setServerError(getErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -163,10 +178,6 @@ export default function RegisterPage(): React.ReactElement {
                   <DInput id="org_name" type="text" placeholder="City Hostel Management" hasError={!!errors.org_name} {...register('org_name')} />
                 </F>
 
-                <F label="Organisation Email" id="org_email" error={errors.org_email?.message} required hint="Used for billing and system notifications">
-                  <DInput id="org_email" type="email" placeholder="admin@cityhoste.com" hasError={!!errors.org_email} {...register('org_email')} />
-                </F>
-
                 <F label="Organisation Phone" id="org_phone" error={errors.org_phone?.message} required hint="Contact number for your organisation">
                   <DInput id="org_phone" type="tel" placeholder="+254 700 000 000" hasError={!!errors.org_phone} {...register('org_phone')} />
                 </F>
@@ -180,7 +191,7 @@ export default function RegisterPage(): React.ReactElement {
                   <F label="Full Name" id="name" error={errors.name?.message} required>
                     <DInput id="name" type="text" placeholder="John Doe" hasError={!!errors.name} {...register('name')} />
                   </F>
-                  <F label="Email Address" id="email" error={errors.email?.message} required>
+                  <F label="Email Address" id="email" error={errors.email?.message} required hint="Used to sign in and for billing/system notifications">
                     <DInput id="email" type="email" placeholder="john@example.com" hasError={!!errors.email} {...register('email')} />
                   </F>
                 </div>

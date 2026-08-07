@@ -212,11 +212,11 @@ export function NotificationPanel({ role }: { role: string }): React.ReactElemen
         onClick={() => setOpen(v => !v)}
         aria-label={`Notifications${unread > 0 ? ` — ${unread} unread` : ''}`}
         className={[
-          'relative rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+          'relative rounded-lg p-2 text-foreground/65 transition-colors hover:bg-muted hover:text-foreground',
           open ? 'bg-muted text-foreground' : '',
         ].join(' ')}
       >
-        <Bell className="h-4 w-4" />
+        <Bell className="h-[1.125rem] w-[1.125rem]" />
         {unread > 0 && (
           <span
             aria-hidden
