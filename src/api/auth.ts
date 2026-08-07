@@ -17,7 +17,6 @@ export const authApi = {
 
   register: (payload: {
     org_name:              string
-    org_email:             string
     org_phone:             string
     name:                  string
     email:                 string

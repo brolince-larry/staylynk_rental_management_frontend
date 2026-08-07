@@ -150,11 +150,12 @@ export function AppShell({
       ? 'bg-white/[0.09] text-white font-medium'
       : 'bg-primary/[0.08] text-primary font-semibold',
     navInactive: darkSidebar
-      ? 'text-slate-400 hover:bg-white/[0.06] hover:text-white'
-      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+      ? 'text-slate-300 hover:bg-white/[0.06] hover:text-white'
+      : 'text-foreground/65 hover:bg-muted hover:text-foreground',
+    iconActive: darkSidebar ? 'bg-white/[0.14]' : 'bg-primary/[0.14]',
     footerMuted: darkSidebar
-      ? 'text-slate-500 hover:bg-white/[0.06] hover:text-slate-300'
-      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+      ? 'text-slate-400 hover:bg-white/[0.06] hover:text-slate-200'
+      : 'text-foreground/65 hover:bg-muted hover:text-foreground',
     userCard: darkSidebar
       ? 'bg-white/[0.05] border-white/[0.07]'
       : 'bg-muted/60 border-border',
@@ -256,14 +257,19 @@ export function AppShell({
                       title={sidebarCollapsed ? item.label : undefined}
                       onClick={() => setSidebarOpen(false)}
                       className={[
-                        'flex min-h-[2.25rem] items-center gap-2.5 rounded-lg px-2.5 py-2 text-[0.88rem] transition-colors duration-150',
+                        'flex min-h-[2.375rem] items-center gap-2 rounded-lg py-1.5 pr-2.5 text-[0.88rem] transition-colors duration-150',
+                        sidebarCollapsed ? 'justify-center px-1.5' : 'pl-1.5',
                         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                         isActive ? sidebar.navActive : sidebar.navInactive,
-                        sidebarCollapsed ? 'justify-center' : '',
                       ].join(' ')}
                       aria-current={isActive ? 'page' : undefined}
                     >
-                      <Icon className="h-[1.0625rem] w-[1.0625rem] shrink-0" aria-hidden />
+                      <span className={[
+                        'flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors duration-150',
+                        isActive ? sidebar.iconActive : '',
+                      ].join(' ')}>
+                        <Icon className="h-[1.125rem] w-[1.125rem]" aria-hidden strokeWidth={isActive ? 2.25 : 2} />
+                      </span>
                       {!sidebarCollapsed && (
                         <>
                           <span className="flex-1 truncate">{item.label}</span>
@@ -342,7 +348,7 @@ export function AppShell({
             title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             <ChevronLeft
-              className={['h-4 w-4 shrink-0 transition-transform', sidebarCollapsed ? 'rotate-180' : ''].join(' ')}
+              className={['h-[1.125rem] w-[1.125rem] shrink-0 transition-transform', sidebarCollapsed ? 'rotate-180' : ''].join(' ')}
             />
             {!sidebarCollapsed && <span>Collapse</span>}
           </button>
@@ -353,13 +359,13 @@ export function AppShell({
             className={[
               'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[0.82rem] transition-colors duration-150',
               darkSidebar
-                ? 'text-slate-500 hover:bg-red-500/10 hover:text-red-300'
-                : 'text-muted-foreground hover:bg-destructive/8 hover:text-destructive',
+                ? 'text-slate-400 hover:bg-red-500/10 hover:text-red-300'
+                : 'text-foreground/60 hover:bg-destructive/8 hover:text-destructive',
               sidebarCollapsed ? 'justify-center' : '',
             ].join(' ')}
             title="Sign out"
           >
-            <LogOut className="h-4 w-4 shrink-0" />
+            <LogOut className="h-[1.125rem] w-[1.125rem] shrink-0" />
             {!sidebarCollapsed && <span>Sign out</span>}
           </button>
         </div>
@@ -375,7 +381,7 @@ export function AppShell({
         <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-card/95 px-3 backdrop-blur-sm sm:gap-3 sm:px-5">
           {/* Mobile menu */}
           <button
-            className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
+            className="shrink-0 rounded-lg p-1.5 text-foreground/65 transition-colors hover:bg-muted hover:text-foreground lg:hidden"
             onClick={() => setSidebarOpen(!sidebarOpen)}
             aria-label="Toggle menu"
           >
@@ -401,12 +407,12 @@ export function AppShell({
             </div>
           </div>
           <button
-            className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+            className="shrink-0 rounded-lg p-1.5 text-foreground/65 transition-colors hover:bg-muted hover:text-foreground md:hidden"
             onClick={() => setMobileSearchOpen((v) => !v)}
             aria-label="Search"
             aria-expanded={mobileSearchOpen}
           >
-            <Search className="h-4 w-4" />
+            <Search className="h-[1.125rem] w-[1.125rem]" />
           </button>
 
           {/* Right controls — shrink-0 keeps them from wrapping */}
@@ -428,11 +434,11 @@ export function AppShell({
                   `relative rounded-lg p-2 transition-colors ${
                     isActive
                       ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      : 'text-foreground/65 hover:bg-muted hover:text-foreground'
                   }`
                 }
               >
-                <Sparkles className="h-4 w-4" />
+                <Sparkles className="h-[1.125rem] w-[1.125rem]" />
               </NavLink>
             )}
 
@@ -446,15 +452,15 @@ export function AppShell({
                   theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light',
                 )
               }
-              className="inline-flex rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="inline-flex rounded-lg p-2 text-foreground/65 transition-colors hover:bg-muted hover:text-foreground"
               aria-label="Toggle theme"
             >
               {theme === 'light' ? (
-                <Moon className="h-4 w-4" />
+                <Moon className="h-[1.125rem] w-[1.125rem]" />
               ) : theme === 'dark' ? (
-                <Sun className="h-4 w-4" />
+                <Sun className="h-[1.125rem] w-[1.125rem]" />
               ) : (
-                <Monitor className="h-4 w-4" />
+                <Monitor className="h-[1.125rem] w-[1.125rem]" />
               )}
             </button>
 

@@ -23,7 +23,6 @@ export type ResetPasswordSchema = z.infer<typeof resetPasswordSchema>
 
 export const registerSchema = z.object({
   org_name:              z.string().min(2, 'Organisation name is required').max(150),
-  org_email:             z.string().email('Invalid organisation email'),
   org_phone:             z.string().min(7, 'Organisation phone is required').max(20),
   name:                  z.string().min(2, 'Your name is required').max(150),
   email:                 z.string().email('Invalid email'),
