@@ -431,7 +431,7 @@ export function AppShell({
                 to={`/${role}/ai`}
                 aria-label="AI Assistant"
                 className={({ isActive }) =>
-                  `relative rounded-lg p-2 transition-colors ${
+                  `relative hidden rounded-lg p-2 transition-colors sm:inline-flex ${
                     isActive
                       ? 'bg-primary/10 text-primary'
                       : 'text-foreground/65 hover:bg-muted hover:text-foreground'
@@ -452,7 +452,7 @@ export function AppShell({
                   theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light',
                 )
               }
-              className="inline-flex rounded-lg p-2 text-foreground/65 transition-colors hover:bg-muted hover:text-foreground"
+              className="hidden rounded-lg p-2 text-foreground/65 transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
               aria-label="Toggle theme"
             >
               {theme === 'light' ? (
