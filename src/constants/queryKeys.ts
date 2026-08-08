@@ -147,6 +147,8 @@ export const QK = {
 
   tenantPayments: (orgId: string, userId: string, params?: object) =>
     ['tenant', 'payments', orgId, userId, params] as const,
+  tenantPaymentStatus: (paymentId: string) =>
+    ['tenant', 'payment-status', paymentId] as const,
 
   tenantMaintenance: (orgId: string, userId: string, params?: object) =>
     ['tenant', 'maintenance', orgId, userId, params] as const,

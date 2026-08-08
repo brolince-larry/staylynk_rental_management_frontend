@@ -7,7 +7,7 @@ import type { PaginatedResponse } from '@/types'
 export interface RoomFilters {
   property_id?: number | string
   status?:       string
-  room_type_id?: number
+  room_type_id?: number | string
   house_type?:   ListingHouseType | ''
   floor?:        string
   block?:        string
