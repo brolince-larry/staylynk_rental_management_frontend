@@ -24,7 +24,7 @@ const HOUSE_TYPES = [
   'villa',
 ] as const
 
-const houseTypeSchema = z.enum(HOUSE_TYPES).optional()
+const houseTypesSchema = z.array(z.enum(HOUSE_TYPES)).default([])
 const roomHouseTypeSchema = z.preprocess(
   (value) => value === '' || value === null ? undefined : value,
   z.enum(HOUSE_TYPES, {
@@ -53,7 +53,7 @@ export const propertySchema = z.object({
   latitude:      z.coerce.number().min(-90).max(90).optional().nullable(),
   longitude:     z.coerce.number().min(-180).max(180).optional().nullable(),
   listing:       z.object({
-    house_type:          houseTypeSchema,
+    house_types:         houseTypesSchema,
     rent_min:            optionalListingNumber,
     rent_max:            optionalListingNumber,
     bedrooms_min:        optionalListingNumber,

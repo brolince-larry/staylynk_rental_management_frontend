@@ -94,7 +94,7 @@ export interface PublicListing {
   slug: string
   title: string
   city?: string | null
-  house_type?: ListingHouseType | 'room' | string | null
+  house_types?: (ListingHouseType | 'room' | string)[]
   property_type?: string | null
   media?: ListingMediaPayload
   units?: PublicListingUnits
