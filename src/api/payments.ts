@@ -89,6 +89,17 @@ export interface MpesaInitiateResult {
   }
 }
 
+export type PaymentStatus = 'pending' | 'completed' | 'failed'
+
+export interface PaymentStatusResult {
+  status: PaymentStatus
+  payment_reference: string
+  amount: number
+  reason: string | null
+  receipt_number: string | null
+  paid_at: string | null
+}
+
 // ─── API ──────────────────────────────────────────────────────────────────
 export const paymentsApi = {
   // ── Admin payments ───────────────────────────────────────────────
@@ -174,6 +185,9 @@ export const paymentsApi = {
       '/tenant/payments/initiate',
       { invoice_id: invoiceId, method: 'mpesa', phone_number, ...(amount ? { amount } : {}) }
     ),
+
+  tenantPaymentStatus: (uuid: string) =>
+    apiGet<PaymentStatusResult>(`/tenant/payments/${uuid}/status`),
 
   tenantBankInfo: () =>
     apiGet<BankInfo>('/tenant/payments/bank-info'),

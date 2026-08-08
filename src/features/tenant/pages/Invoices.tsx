@@ -13,24 +13,30 @@
 //   4. Full invoice table with pay button + receipt download + expandable breakdown
 //   5. Pay modal — M-Pesa STK or Bank Transfer
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
+import { useQueryClient } from '@tanstack/react-query'
 import {
-  Download, CreditCard, CheckCircle, Clock,
+  Download, CreditCard, CheckCircle, Clock, Loader2, XCircle,
   AlertCircle, ChevronDown, ChevronUp, Phone, Copy, Paperclip,
 } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useTenantInvoices, useTenantInvoice, useTenantDashboard, useInitiateMpesa, useTenantBankInfo, useSubmitBankTransfer } from '../hooks'
+import {
+  useTenantInvoices, useTenantInvoice, useTenantDashboard, useInitiateMpesa,
+  useTenantPaymentStatus, useTenantBankInfo, useSubmitBankTransfer,
+} from '../hooks'
 import { usePagination, useToast } from '@/hooks'
 import { DataTable, type ColumnDef } from '@/components/tables/DataTable'
 import { FilterBar, Select, Modal, Button, FormField, Input, ToastContainer } from '@/components/forms'
 import { PageHeader, StatusBadge, StatCard, SectionCard } from '@/components/ui'
 import { formatCurrency, formatDate, formatYearMonth } from '@/utils/format'
 import { useAuthStore } from '@/store/auth.store'
+import { useRealtime } from '@/providers/realtimeContext'
+import { QK } from '@/constants/queryKeys'
 import type { ApiError } from '@/types'
-import type { MpesaInitiateResult } from '@/api/payments'
+import type { MpesaInitiateResult, PaymentStatusResult } from '@/api/payments'
 import { openSignedDocument } from '@/api/documentDownloads'
 
 // ─── Types matching backend response ─────────────────────────────────────
@@ -339,11 +345,65 @@ function PayModal({ invoice, currency, onClose, onSuccess }: PayModalProps): Rea
   const [paymentResult, setPaymentResult] = useState<MpesaInitiateResult | null>(null)
   const { mutate: initiateMpesa, isPending: sending } = useInitiateMpesa()
   const { toasts, toast, error: toastError, dismiss } = useToast()
+  const qc = useQueryClient()
+  const { subscribePrivate } = useRealtime()
+  const tenantId = useAuthStore((s) => s.user?.id?.toString() ?? '')
+
+  const paymentId = paymentResult?.payment.id ? String(paymentResult.payment.id) : null
+  const { data: trackedPayment } = useTenantPaymentStatus(paymentId, stkSent && method === 'mpesa')
 
   const form = useForm<PaySchema>({
     resolver: zodResolver(paySchema),
     defaultValues: { method: 'mpesa', phone_number: '' },
   })
+
+  // Realtime push is the fast path — it writes straight into the same query
+  // cache slot the poll fallback reads from (useTenantPaymentStatus, below),
+  // so one render path handles both; whichever arrives first wins, and the
+  // poll naturally stops once the cached status is no longer 'pending'.
+  // The reference check guards against a stale event for a *different*
+  // payment landing on this tenant-wide channel while this modal is open.
+  useEffect(() => {
+    if (!stkSent || !paymentId || !tenantId) return
+    const reference = paymentResult?.payment.payment_reference
+    const requestedAmount = paymentResult?.payment.amount ?? 0
+    const channel = `tenant.${tenantId}.payments`
+
+    const cleanupConfirmed = subscribePrivate<{
+      payment_reference: string
+      receipt_number: string
+      amount_paid: number
+      confirmed_at: string
+    }>(channel, '.rent.payment.confirmed', (payload) => {
+      if (payload.payment_reference !== reference) return
+      qc.setQueryData<PaymentStatusResult>(QK.tenantPaymentStatus(paymentId), {
+        status: 'completed',
+        payment_reference: payload.payment_reference,
+        amount: payload.amount_paid,
+        reason: null,
+        receipt_number: payload.receipt_number,
+        paid_at: payload.confirmed_at,
+      })
+    })
+
+    const cleanupFailed = subscribePrivate<{
+      payment_reference: string
+      reason: string
+      failed_at: string
+    }>(channel, '.rent.payment.failed', (payload) => {
+      if (payload.payment_reference !== reference) return
+      qc.setQueryData<PaymentStatusResult>(QK.tenantPaymentStatus(paymentId), {
+        status: 'failed',
+        payment_reference: payload.payment_reference,
+        amount: requestedAmount,
+        reason: payload.reason,
+        receipt_number: null,
+        paid_at: null,
+      })
+    })
+
+    return () => { cleanupConfirmed(); cleanupFailed() }
+  }, [stkSent, paymentId, tenantId, paymentResult?.payment.payment_reference, paymentResult?.payment.amount, subscribePrivate, qc])
 
   if (!invoice) return null
 
@@ -351,11 +411,19 @@ function PayModal({ invoice, currency, onClose, onSuccess }: PayModalProps): Rea
     ? (invoice.balance as number)
     : (invoice.total_amount as number)
 
+  const paymentStatus: PaymentStatusResult['status'] = trackedPayment?.status ?? 'pending'
+
   const switchMethod = (m: typeof method) => {
     setMethod(m)
     setStkSent(false)
     setPaymentResult(null)
     form.reset({ method: m } as PaySchema)
+  }
+
+  const resetToForm = () => {
+    setStkSent(false)
+    setPaymentResult(null)
+    form.reset({ method: 'mpesa', phone_number: '' } as PaySchema)
   }
 
   const onSubmit = (values: PaySchema) => {
@@ -397,7 +465,16 @@ function PayModal({ invoice, currency, onClose, onSuccess }: PayModalProps): Rea
           method === 'bank_transfer'
             ? <Button variant="outline" onClick={onClose}>Close</Button>
             : stkSent ? (
-              <Button className="w-full" onClick={() => { onSuccess(); setStkSent(false) }}>Done</Button>
+              paymentStatus === 'failed' ? (
+                <>
+                  <Button variant="outline" onClick={onClose}>Close</Button>
+                  <Button onClick={resetToForm}>Try Again</Button>
+                </>
+              ) : (
+                <Button className="w-full" onClick={() => { onSuccess(); setStkSent(false) }}>
+                  {paymentStatus === 'completed' ? 'Done' : 'Close'}
+                </Button>
+              )
             ) : (
               <>
                 <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -448,13 +525,35 @@ function PayModal({ invoice, currency, onClose, onSuccess }: PayModalProps): Rea
         {method === 'mpesa' && (
           stkSent ? (
             <div className="text-center py-4 space-y-3">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/50">
-                <CheckCircle className="h-6 w-6 text-emerald-600" />
+              <div className={[
+                'mx-auto flex h-12 w-12 items-center justify-center rounded-full',
+                paymentStatus === 'completed' ? 'bg-emerald-100 dark:bg-emerald-950/50'
+                  : paymentStatus === 'failed' ? 'bg-red-100 dark:bg-red-950/50'
+                  : 'bg-amber-100 dark:bg-amber-950/50',
+              ].join(' ')}>
+                {paymentStatus === 'completed' ? (
+                  <CheckCircle className="h-6 w-6 text-emerald-600" />
+                ) : paymentStatus === 'failed' ? (
+                  <XCircle className="h-6 w-6 text-red-600" />
+                ) : (
+                  <Loader2 className="h-6 w-6 animate-spin text-amber-600" aria-label="Waiting for confirmation" />
+                )}
               </div>
-              <p className="text-sm font-semibold text-foreground">STK push sent</p>
-              <p className="text-xs text-muted-foreground">
-                Check your phone for the M-Pesa prompt. The payment will stay pending until the callback confirms it.
+
+              <p className="text-sm font-semibold text-foreground">
+                {paymentStatus === 'completed' ? 'Payment successful'
+                  : paymentStatus === 'failed' ? 'Payment failed'
+                  : 'Waiting for confirmation…'}
               </p>
+
+              <p role={paymentStatus === 'failed' ? 'alert' : undefined} className="text-xs text-muted-foreground">
+                {paymentStatus === 'completed'
+                  ? 'Your payment has been confirmed and applied to this invoice.'
+                  : paymentStatus === 'failed'
+                    ? (trackedPayment?.reason || 'The payment could not be completed.')
+                    : 'Check your phone for the M-Pesa prompt and enter your PIN.'}
+              </p>
+
               {paymentResult?.payment && (
                 <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-left text-xs">
                   <div className="flex justify-between gap-3">
@@ -463,17 +562,35 @@ function PayModal({ invoice, currency, onClose, onSuccess }: PayModalProps): Rea
                   </div>
                   <div className="mt-1 flex justify-between gap-3">
                     <span className="text-muted-foreground">Amount</span>
-                    <span className="font-semibold text-foreground">{formatCurrency(paymentResult.payment.amount, currency)}</span>
+                    <span className="font-semibold text-foreground">
+                      {formatCurrency(trackedPayment?.amount ?? paymentResult.payment.amount, currency)}
+                    </span>
                   </div>
+                  {paymentStatus === 'completed' && trackedPayment?.receipt_number && (
+                    <div className="mt-1 flex justify-between gap-3">
+                      <span className="text-muted-foreground">Receipt No.</span>
+                      <span className="font-mono text-foreground">{trackedPayment.receipt_number}</span>
+                    </div>
+                  )}
                   <div className="mt-1 flex justify-between gap-3">
                     <span className="text-muted-foreground">Status</span>
-                    <span className="capitalize text-amber-700">{paymentResult.payment.status}</span>
+                    <span className={[
+                      'capitalize font-medium',
+                      paymentStatus === 'completed' ? 'text-emerald-700 dark:text-emerald-400'
+                        : paymentStatus === 'failed' ? 'text-red-700 dark:text-red-400'
+                        : 'text-amber-700 dark:text-amber-400',
+                    ].join(' ')}>
+                      {paymentStatus}
+                    </span>
                   </div>
                 </div>
               )}
-              <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                Final status is handled by the backend callback.
-              </div>
+
+              {paymentStatus === 'pending' && (
+                <p className="text-[11px] text-muted-foreground">
+                  This updates automatically — no need to refresh.
+                </p>
+              )}
             </div>
           ) : (
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">

@@ -163,6 +163,22 @@ export function useInitiateMpesa() {
   })
 }
 
+// Polling fallback alongside the realtime broadcast — covers a missed
+// websocket event (dropped connection, backgrounded tab). Stops the moment
+// the payment resolves either way.
+export function useTenantPaymentStatus(paymentId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: QK.tenantPaymentStatus(paymentId ?? 'none'),
+    queryFn: () => paymentsApi.tenantPaymentStatus(paymentId as string).then((r) => r.data),
+    enabled: enabled && !!paymentId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      return status && status !== 'pending' ? false : 4_000
+    },
+    refetchIntervalInBackground: true,
+  })
+}
+
 export function useTenantBankInfo() {
   return useQuery({
     queryKey: ['tenant', 'bank-info'],
