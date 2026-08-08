@@ -4,7 +4,7 @@ import { Helmet } from 'react-helmet-async'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useForm, useWatch, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useRooms, useCreateRoom, useUpdateRoom, useDeleteRoom } from '../hooks/useRooms'
+import { useRooms, useRoomTypes, useCreateRoom, useUpdateRoom, useDeleteRoom } from '../hooks/useRooms'
 import { useDebounce, usePagination, useToast } from '@/hooks'
 import { DataTable, type ColumnDef, type SortState } from '@/components/tables/DataTable'
 import { SearchInput, FilterBar, Select, Modal, Button, FormField, Input, ConfirmDialog, ToastContainer } from '@/components/forms'
@@ -31,6 +31,7 @@ export default function Rooms(): React.ReactElement {
   const currency = useAuthStore((s) => s.user?.org?.currency ?? 'KES')
   const [search, setSearch]       = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [editRoom, setEditRoom]     = useState<Room | null>(null)
   const [deleteId, setDeleteId]   = useState<number | null>(null)
@@ -44,11 +45,14 @@ export default function Rooms(): React.ReactElement {
   const { toasts, success, error: toastError, dismiss } = useToast()
 
   const { data, isLoading, isError, refetch } = useRooms({
-    search:      debouncedSearch || undefined,
-    status:      statusFilter    || undefined,
+    search:       debouncedSearch || undefined,
+    status:       statusFilter    || undefined,
+    room_type_id: typeFilter      || undefined,
     sort: sort.column, direction: sort.direction,
     page, per_page: perPage,
   })
+  const { data: roomTypesData } = useRoomTypes({ active_only: 0 })
+  const roomTypeOptions = (roomTypesData?.data ?? []) as Array<{ value: string; label: string }>
 
   const roomModalOpen = createOpen || !!editRoom
   const { mutate: createRoom,   isPending: creating } = useCreateRoom()
@@ -291,6 +295,8 @@ export default function Rooms(): React.ReactElement {
           <SearchInput value={search} onChange={setSearch} placeholder="Search room number…" className="w-60" />
           <Select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} placeholder="All statuses" className="w-36 text-xs"
             options={[{ value:'', label:'All' }, { value:'available', label:'Available' }, { value:'occupied', label:'Occupied' }, { value:'maintenance', label:'Maintenance' }, { value:'reserved', label:'Reserved' }]} />
+          <Select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1) }} placeholder="All types" className="w-40 text-xs"
+            options={[{ value: '', label: 'All' }, ...roomTypeOptions.map(t => ({ value: t.value, label: t.label }))]} />
         </FilterBar>
         <DataTable columns={columns} data={rows} keyField="id" loading={isLoading}
           error={isError ? 'Failed to load rooms.' : null}
