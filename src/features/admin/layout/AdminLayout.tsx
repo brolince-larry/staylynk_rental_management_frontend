@@ -111,7 +111,7 @@ export default function AdminLayout({ children }: { children: ReactNode }): Reac
       role="admin"
       logoLabel="StayLynk"
       logoSub="Admin Portal"
-      topbarSlot={<><PropertySwitcher /><KnowledgeWidget /></>}
+      topbarSlot={<><PropertySwitcher /><span className="hidden sm:inline-flex"><KnowledgeWidget /></span></>}
     >
       {children}
       <PlanIntroModal />
