@@ -500,7 +500,7 @@ function AIPropertyCard({
   const price = formatRentRange(property)
   const bedrooms = formatRange(property.bedrooms_min, property.bedrooms_max, 'bed')
   const detailChips = [
-    property.house_type,
+    property.house_types?.join(', '),
     bedrooms,
     property.parking_available ? 'Parking' : null,
     property.internet_available ? 'WiFi' : null,
@@ -618,7 +618,7 @@ function BackendListingCard({ listing, index, total }: { listing: PublicListing;
   const location = [listing.city].filter(Boolean).join(', ')
   const rent = formatListingRentRange(listing)
   const available = listing.available_units > 0
-  const houseType = listing.house_type?.replace(/_/g, ' ')
+  const houseType = listing.house_types?.map((t) => t.replace(/_/g, ' ')).join(', ')
 
   return (
     <article className="relative h-full snap-start overflow-hidden bg-zinc-950">

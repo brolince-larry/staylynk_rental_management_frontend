@@ -260,10 +260,14 @@ export default function ListingDetail(): React.ReactElement {
                 {[loc.neighbourhood, loc.city, loc.country === 'KE' ? 'Kenya' : loc.country].filter(Boolean).join(', ')}
               </p>
             )}
-            {listing.house_type && (
-              <span className="inline-block rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold capitalize text-primary">
-                {listing.house_type.replace(/_/g, ' ')}
-              </span>
+            {listing.house_types && listing.house_types.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {listing.house_types.map((type) => (
+                  <span key={type} className="inline-block rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold capitalize text-primary">
+                    {type.replace(/_/g, ' ')}
+                  </span>
+                ))}
+              </div>
             )}
           </div>
 

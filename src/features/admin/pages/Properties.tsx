@@ -44,7 +44,7 @@ const propertyFormDefaults: Partial<PropertySchema> = {
   country: 'KE',
   total_floors: 1,
   listing: {
-    house_type: 'apartment',
+    house_types: [],
     amenities: [],
     water_available: false,
     internet_available: false,
@@ -139,7 +139,7 @@ export default function Properties(): React.ReactElement {
       latitude: (editProperty as { latitude?: number | null }).latitude ?? undefined,
       longitude: (editProperty as { longitude?: number | null }).longitude ?? undefined,
       listing: {
-        house_type: listing?.house_type ?? 'apartment',
+        house_types: listing?.house_types ?? [],
         rent_min: listing?.rent_min ?? undefined,
         rent_max: listing?.rent_max ?? undefined,
         bedrooms_min: listing?.bedrooms_min ?? undefined,
@@ -627,7 +627,7 @@ export default function Properties(): React.ReactElement {
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   {([
-                    ['Type', houseTypeLabel(viewProperty.listing.house_type), 'bg-gradient-to-br from-violet-50/80 to-purple-50/50 dark:from-violet-950/20 dark:to-purple-950/10'],
+                    ['Type', houseTypeLabels(viewProperty.listing.house_types), 'bg-gradient-to-br from-violet-50/80 to-purple-50/50 dark:from-violet-950/20 dark:to-purple-950/10'],
                     ['Rent', formatRentRange(viewProperty.listing), 'bg-gradient-to-br from-emerald-50/80 to-teal-50/50 dark:from-emerald-950/20 dark:to-teal-950/10'],
                     ['Bedrooms', formatRange(viewProperty.listing.bedrooms_min, viewProperty.listing.bedrooms_max), 'bg-gradient-to-br from-blue-50/80 to-sky-50/50 dark:from-blue-950/20 dark:to-sky-950/10'],
                     ['Bathrooms', formatRange(viewProperty.listing.bathrooms_min, viewProperty.listing.bathrooms_max), 'bg-gradient-to-br from-cyan-50/80 to-teal-50/50 dark:from-cyan-950/20 dark:to-teal-950/10'],
@@ -1126,18 +1126,31 @@ function MapLocationPicker({ form, idPrefix }: { form: UseFormReturn<PropertySch
 
 function ListingFields({ form, idPrefix }: { form: UseFormReturn<PropertySchema>; idPrefix: string }): React.ReactElement {
   const selectedAmenities = form.watch('listing.amenities') ?? []
+  const selectedHouseTypes = form.watch('listing.house_types') ?? []
   const le = form.formState.errors.listing
 
   return (
     <div className="col-span-2 grid grid-cols-2 gap-4 rounded-lg border border-border bg-muted/20 p-4">
-      <FormField label="House Type" htmlFor={`${idPrefix}house-type`} error={le?.house_type?.message}>
-        <Select
-          id={`${idPrefix}house-type`}
-          error={!!le?.house_type}
-          {...form.register('listing.house_type')}
-          options={HOUSE_TYPE_OPTIONS}
-        />
-      </FormField>
+      <div className="col-span-2">
+        <p className="mb-2 text-xs font-medium text-foreground">
+          House Types
+          {le?.house_types && <span className="ml-2 text-xs text-destructive">{le.house_types.message as string}</span>}
+        </p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {HOUSE_TYPE_OPTIONS.map(({ value, label }) => (
+            <label key={value} className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground">
+              <input
+                type="checkbox"
+                value={value}
+                checked={selectedHouseTypes.includes(value)}
+                className="h-4 w-4 accent-primary"
+                {...form.register('listing.house_types')}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+      </div>
       <FormField label="Neighbourhood" htmlFor={`${idPrefix}neighbourhood`} error={le?.neighbourhood?.message}>
         <Input id={`${idPrefix}neighbourhood`} placeholder="Kilimani" error={!!le?.neighbourhood} {...form.register('listing.neighbourhood')} />
       </FormField>
@@ -1202,7 +1215,7 @@ function buildPropertyPayload(values: PropertySchema): PropertyInput {
     latitude: values.latitude ?? undefined,
     longitude: values.longitude ?? undefined,
     listing: {
-      house_type: values.listing?.house_type,
+      house_types: values.listing?.house_types ?? [],
       rent_min: values.listing?.rent_min,
       rent_max: values.listing?.rent_max,
       bedrooms_min: values.listing?.bedrooms_min,
@@ -1223,6 +1236,11 @@ function buildPropertyPayload(values: PropertySchema): PropertyInput {
 function houseTypeLabel(value?: string | null): string {
   if (!value) return '—'
   return HOUSE_TYPE_OPTIONS.find((option) => option.value === value)?.label ?? String(value)
+}
+
+function houseTypeLabels(values?: string[] | null): string {
+  if (!values || values.length === 0) return '—'
+  return values.map((value) => houseTypeLabel(value)).join(', ')
 }
 
 function formatTimeRemaining(scheduledPurgeAt: string | null, canRestore: boolean): string {

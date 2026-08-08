@@ -15,7 +15,7 @@ export interface PropertyFilters {
 export interface PropertyListingInput {
   title?: string
   description?: string
-  house_type?: HouseType
+  house_types?: HouseType[]
   rent_min?: number
   rent_max?: number
   currency?: string
@@ -93,7 +93,7 @@ export interface Property {
     slug: string
     title: string
     description?: string | null
-    house_type?: HouseType | null
+    house_types?: HouseType[]
     rent_min: number
     rent_max: number
     currency: string

@@ -18,7 +18,7 @@ export interface AIPropertyResult {
   city?: string | null
   neighbourhood?: string | null
   county?: string | null
-  house_type?: string | null
+  house_types?: string[]
   bedrooms_min?: number | null
   bedrooms_max?: number | null
   amenities?: string[]
