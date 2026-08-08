@@ -546,7 +546,15 @@ function PayModal({ invoice, currency, onClose, onSuccess }: PayModalProps): Rea
                   : 'Waiting for confirmation…'}
               </p>
 
-              <p role={paymentStatus === 'failed' ? 'alert' : undefined} className="text-xs text-muted-foreground">
+              <p
+                role={paymentStatus === 'failed' ? 'alert' : undefined}
+                className={[
+                  'text-xs',
+                  paymentStatus === 'completed' ? 'font-medium text-emerald-700 dark:text-emerald-400'
+                    : paymentStatus === 'failed' ? 'font-medium text-red-700 dark:text-red-400'
+                    : 'text-muted-foreground',
+                ].join(' ')}
+              >
                 {paymentStatus === 'completed'
                   ? 'Your payment has been confirmed and applied to this invoice.'
                   : paymentStatus === 'failed'

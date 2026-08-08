@@ -431,7 +431,7 @@ export function AppShell({
                 to={`/${role}/ai`}
                 aria-label="AI Assistant"
                 className={({ isActive }) =>
-                  `relative hidden rounded-lg p-2 transition-colors sm:inline-flex ${
+                  `relative inline-flex rounded-lg p-2 transition-colors ${
                     isActive
                       ? 'bg-primary/10 text-primary'
                       : 'text-foreground/65 hover:bg-muted hover:text-foreground'

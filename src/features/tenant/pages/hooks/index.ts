@@ -1,4 +1,5 @@
 // src/features/tenant/hooks/index.ts
+import { useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth.store'
 import { QK } from '@/constants/queryKeys'
@@ -166,16 +167,37 @@ export function useInitiateMpesa() {
 // Polling fallback alongside the realtime broadcast — covers a missed
 // websocket event (dropped connection, backgrounded tab). Stops the moment
 // the payment resolves either way.
+//
+// Interval eases off the longer a payment stays pending, and polling stops
+// outright ~1 minute past the STK push's ~3 minute expiry window (the
+// backend self-heals an expired pending payment on that next poll, so
+// there's nothing left to learn by continuing after that). Keeps a spike of
+// concurrent payers from settling into a constant-interval poll storm.
+// Background tabs don't poll at all — the websocket (throttled but not
+// killed) or a refetch-on-focus when the tab is revisited covers that case.
 export function useTenantPaymentStatus(paymentId: string | null, enabled: boolean) {
+  const pollStartRef = useRef<{ id: string | null; startedAt: number }>({ id: null, startedAt: 0 })
+
   return useQuery({
     queryKey: QK.tenantPaymentStatus(paymentId ?? 'none'),
     queryFn: () => paymentsApi.tenantPaymentStatus(paymentId as string).then((r) => r.data),
     enabled: enabled && !!paymentId,
+    refetchOnWindowFocus: true,
     refetchInterval: (query) => {
       const status = query.state.data?.status
-      return status && status !== 'pending' ? false : 4_000
+      if (status && status !== 'pending') return false
+
+      if (pollStartRef.current.id !== paymentId) {
+        pollStartRef.current = { id: paymentId, startedAt: Date.now() }
+      }
+      const elapsed = Date.now() - pollStartRef.current.startedAt
+      if (elapsed > 4 * 60_000) return false
+
+      if (elapsed < 20_000) return 3_000
+      if (elapsed < 60_000) return 6_000
+      return 12_000
     },
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
   })
 }
 

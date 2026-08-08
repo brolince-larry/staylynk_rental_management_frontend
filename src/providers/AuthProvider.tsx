@@ -19,8 +19,8 @@ import { useBodyScrollLock } from '@/hooks'
 const SESSION_KEY = 'hh_session'
 let restoreSessionPromise: Promise<void> | null = null
 
-const IDLE_MS   = 10 * 60 * 1000  // 10 minutes → logout
-const WARN_MS   =  9 * 60 * 1000  //  9 minutes → show warning
+const IDLE_MS   = 5 * 60 * 1000  // 5 minutes → logout
+const WARN_MS   = 4 * 60 * 1000  // 4 minutes → show warning (60s countdown before logout)
 const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'] as const
 
 // ─── Provider ────────────────────────────────────────────────────────────
