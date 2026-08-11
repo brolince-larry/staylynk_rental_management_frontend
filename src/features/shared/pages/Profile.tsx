@@ -5,6 +5,7 @@ import { AlertTriangle, Mail, Save, ShieldCheck } from 'lucide-react'
 import { profileApi } from '@/api/profile'
 import { Button, FormField, Input, ToastContainer } from '@/components/forms'
 import { MediaUploadField, SmartImage } from '@/components/media'
+import { OtpVerifyModal } from '@/components/shared/OtpVerifyModal'
 import { PageHeader, SectionCard } from '@/components/ui'
 import { useToast } from '@/hooks'
 import { useAuthStore } from '@/store/auth.store'
@@ -24,6 +25,7 @@ export default function Profile(): React.ReactElement {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [photoFiles, setPhotoFiles] = useState<File[]>([])
+  const [otpType, setOtpType] = useState<'email' | 'password' | null>(null)
 
   const { data: profile, isLoading, refetch } = useQuery({
     queryKey: ['profile'],
@@ -84,9 +86,7 @@ export default function Profile(): React.ReactElement {
       email: newEmail.trim(),
     }),
     onSuccess: () => {
-      success(APPROVAL_MESSAGE, "You'll be logged out after confirmation.")
-      setNewEmail('')
-      setEmailPassword('')
+      setOtpType('email')
     },
     onError: (err) => toastError(err, 'Failed to request email change'),
   })
@@ -99,10 +99,7 @@ export default function Profile(): React.ReactElement {
       password_confirmation: confirmPassword,
     }),
     onSuccess: () => {
-      success(APPROVAL_MESSAGE, "You'll be logged out after confirmation.")
-      setCurrentPassword('')
-      setNewPassword('')
-      setConfirmPassword('')
+      setOtpType('password')
     },
     onError: (err) => toastError(err, 'Failed to request password change'),
   })
@@ -224,6 +221,28 @@ export default function Profile(): React.ReactElement {
             </div>
           </SectionCard>
         </div>
+
+        {otpType && (
+          <OtpVerifyModal
+            title={otpType === 'email' ? 'Confirm your new email' : 'Confirm your new password'}
+            description="Enter the 6-digit code sent to your email. It expires in 5 minutes."
+            onClose={() => setOtpType(null)}
+            onSubmit={async (code) => {
+              await profileApi.verifyChange(otpType, code)
+              setOtpType(null)
+              if (otpType === 'email') {
+                setNewEmail('')
+                setEmailPassword('')
+              } else {
+                setCurrentPassword('')
+                setNewPassword('')
+                setConfirmPassword('')
+              }
+              success('Change confirmed. Please log in again.')
+              window.location.href = '/login'
+            }}
+          />
+        )}
       </div>
     </>
   )

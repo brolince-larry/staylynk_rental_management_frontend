@@ -38,6 +38,9 @@ export const profileApi = {
   requestChange: (data: EmailChangePayload | PasswordChangePayload) =>
     apiPost<Record<string, unknown>>('/profile/changes', data),
 
+  verifyChange: (type: 'email' | 'password', code: string) =>
+    apiPost<Record<string, unknown>>('/profile/changes/verify', { type, code }),
+
   uploadPhoto: (data: FormData) =>
     apiPost<Profile | Record<string, unknown>>('/profile/photo', data),
 }
