@@ -4,37 +4,57 @@ import type { PaginatedResponse } from '@/types'
 
 export const PROPERTY_TYPE_OPTIONS = [
   { label: 'All Types', value: '' },
-  { label: 'Apartments', value: 'apartment' },
-  { label: 'Bedsitters', value: 'bedsitter' },
-  { label: 'Houses', value: 'house' },
-  { label: 'Rooms', value: 'room' },
-  { label: 'Single Rooms', value: 'single_room' },
-  { label: 'Double Rooms', value: 'double_room' },
-  { label: 'Short Let', value: 'short_let' },
-  { label: 'Studios', value: 'studio' },
-  { label: 'Maisonettes', value: 'maisonette' },
-  { label: 'Bungalows', value: 'bungalow' },
-  { label: 'Townhouses', value: 'townhouse' },
-  { label: 'Villas', value: 'villa' },
+  { label: 'Apartment', value: 'apartment' },
+  { label: 'Maisonette', value: 'maisonette' },
+  { label: 'Bungalow', value: 'bungalow' },
+  { label: 'Townhouse', value: 'townhouse' },
+  { label: 'Villa', value: 'villa' },
+  { label: 'Detached House', value: 'detached_house' },
+  { label: 'Semi-Detached', value: 'semi_detached' },
+  { label: 'Hostel', value: 'hostel' },
+  { label: 'Guest House', value: 'guest_house' },
+  { label: 'Commercial/Other', value: 'commercial_other' },
 ] as const
 
 export const HOUSE_TYPE_OPTIONS = PROPERTY_TYPE_OPTIONS.filter((option) => option.value !== '') as Array<{ label: string; value: HouseType }>
 
 export type HouseType =
   | 'apartment'
-  | 'bedsitter'
-  | 'house'
-  | 'room'
-  | 'single_room'
-  | 'double_room'
-  | 'short_let'
-  | 'studio'
   | 'maisonette'
   | 'bungalow'
   | 'townhouse'
   | 'villa'
+  | 'detached_house'
+  | 'semi_detached'
+  | 'hostel'
+  | 'guest_house'
+  | 'commercial_other'
 
 export type ListingHouseType = HouseType
+
+export const UNIT_TYPE_OPTIONS = [
+  { label: 'Single Room', value: 'single_room' },
+  { label: 'Bedsitter', value: 'bedsitter' },
+  { label: 'Studio', value: 'studio' },
+  { label: '1 Bedroom', value: 'one_bedroom' },
+  { label: '2 Bedroom', value: 'two_bedroom' },
+  { label: '3 Bedroom', value: 'three_bedroom' },
+  { label: '4+ Bedroom', value: 'four_plus_bedroom' },
+  { label: 'Shared Room', value: 'shared_room' },
+  { label: 'Penthouse', value: 'penthouse' },
+] as const
+
+export type UnitType =
+  | 'single_room'
+  | 'bedsitter'
+  | 'studio'
+  | 'one_bedroom'
+  | 'two_bedroom'
+  | 'three_bedroom'
+  | 'four_plus_bedroom'
+  | 'shared_room'
+  | 'penthouse'
+
 export type SecurityLevel = 'low' | 'standard' | 'high' | 'gated'
 export type VerificationStatus = 'unverified' | 'verified' | 'trusted'
 

@@ -12,7 +12,7 @@ import { MediaManager, MediaUploadField, SmartImage } from '@/components/media'
 import { entityIdFromResponse, mediaService, type MediaItem } from '@/services/media'
 import { PageHeader, StatusBadge } from '@/components/ui'
 import { roomSchema, type RoomSchema } from '@/schemas/property.schema'
-import { HOUSE_TYPE_OPTIONS } from '@/api/listings'
+import { UNIT_TYPE_OPTIONS } from '@/api/listings'
 import { roomsApi } from '@/api/rooms'
 import { formatCurrency } from '@/utils/format'
 import { useAuthStore } from '@/store/auth.store'
@@ -326,13 +326,13 @@ export default function Rooms(): React.ReactElement {
               <Input id="rcount" type="number" min={1} max={100} error={!!form.formState.errors.number_of_rooms} {...form.register('number_of_rooms')} />
             </FormField>
           )}
-          <FormField label="House Type" htmlFor="rhousetype" error={form.formState.errors.house_type?.message} required>
+          <FormField label="Unit Type" htmlFor="rhousetype" error={form.formState.errors.house_type?.message} required>
             <Select
               id="rhousetype"
               error={!!form.formState.errors.house_type}
-              placeholder="Select house type"
+              placeholder="Select unit type"
               {...form.register('house_type')}
-              options={[...HOUSE_TYPE_OPTIONS]}
+              options={[...UNIT_TYPE_OPTIONS]}
             />
           </FormField>
           {!editRoom && Number(numberOfRooms) > 1 && (
