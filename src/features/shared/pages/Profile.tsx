@@ -6,6 +6,7 @@ import { profileApi } from '@/api/profile'
 import { Button, FormField, Input, ToastContainer } from '@/components/forms'
 import { MediaUploadField, SmartImage } from '@/components/media'
 import { OtpVerifyModal } from '@/components/shared/OtpVerifyModal'
+import { PasswordStrengthMeter } from '@/components/shared/PasswordStrengthMeter'
 import { PageHeader, SectionCard } from '@/components/ui'
 import { useToast } from '@/hooks'
 import { useAuthStore } from '@/store/auth.store'
@@ -210,6 +211,7 @@ export default function Profile(): React.ReactElement {
                 </FormField>
                 <FormField label="New Password" htmlFor="new-password" required>
                   <Input id="new-password" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+                  <PasswordStrengthMeter password={newPassword} />
                 </FormField>
                 <FormField label="Confirm Password" htmlFor="confirm-password" required>
                   <Input id="confirm-password" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
