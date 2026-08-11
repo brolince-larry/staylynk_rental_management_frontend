@@ -31,8 +31,8 @@ export const authApi = {
     apiPost<null>('/auth/forgot-password', { email }),
 
   resetPassword: (payload: {
-    token:                 string
     email:                 string
+    code:                  string
     password:              string
     password_confirmation: string
   }) =>

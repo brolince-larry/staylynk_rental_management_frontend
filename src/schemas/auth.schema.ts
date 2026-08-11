@@ -13,8 +13,10 @@ export const forgotPasswordSchema = z.object({
 export type ForgotPasswordSchema = z.infer<typeof forgotPasswordSchema>
 
 export const resetPasswordSchema = z.object({
-  password:              z.string().min(8, 'At least 8 characters'),
-  password_confirmation: z.string(),
+  email:                  z.string().min(1, 'Email is required').email('Invalid email address'),
+  code:                   z.string().length(6, 'Enter the 6-digit code'),
+  password:               z.string().min(8, 'At least 8 characters'),
+  password_confirmation:  z.string(),
 }).refine(d => d.password === d.password_confirmation, {
   message: 'Passwords do not match',
   path:    ['password_confirmation'],
