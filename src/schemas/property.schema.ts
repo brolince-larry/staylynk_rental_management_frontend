@@ -11,26 +11,28 @@ const moneyValue = (schema: z.ZodNumber) => z.preprocess((value) => {
 
 const HOUSE_TYPES = [
   'apartment',
-  'bedsitter',
-  'house',
-  'room',
-  'single_room',
-  'double_room',
-  'short_let',
-  'studio',
   'maisonette',
   'bungalow',
   'townhouse',
   'villa',
+  'detached_house',
+  'semi_detached',
+  'hostel',
+  'guest_house',
+  'commercial_other',
 ] as const
 
 const houseTypesSchema = z.array(z.enum(HOUSE_TYPES)).default([])
+// Unit type (Rooms.tsx) is freeform on the backend — StoreRoomRequest /
+// UpdateRoomRequest resolve house_type into a RoomType row by name,
+// creating one if it doesn't exist yet, so there's no fixed enum to
+// validate against here. UNIT_TYPE_OPTIONS just supplies curated choices.
 const roomHouseTypeSchema = z.preprocess(
   (value) => value === '' || value === null ? undefined : value,
-  z.enum(HOUSE_TYPES, {
-    required_error: 'House type is required',
-    invalid_type_error: 'House type is required',
-  })
+  z.string({
+    required_error: 'Unit type is required',
+    invalid_type_error: 'Unit type is required',
+  }).min(1, 'Unit type is required')
 )
 
 const optionalListingNumber = z.preprocess(
