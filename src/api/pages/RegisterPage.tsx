@@ -9,6 +9,7 @@ import { normalizeDashboardPath } from '@/auth/routeAccess'
 import { useAuthStore } from '@/store/auth.store'
 import { registerSchema, type RegisterSchema } from '@/schemas/auth.schema'
 import { getErrorMessage, isApiError } from '@/utils/errors'
+import { PasswordStrengthMeter } from '@/components/shared/PasswordStrengthMeter'
 
 const REGISTER_FORM_FIELDS = new Set<keyof RegisterSchema>([
   'org_name', 'org_phone', 'name', 'email',
@@ -33,8 +34,6 @@ export default function RegisterPage(): React.ReactElement {
   } = useForm<RegisterSchema>({ resolver: zodResolver(registerSchema) })
 
   const password = watch('password', '')
-  const strength = [password.length >= 8, /[A-Z]/.test(password), /[0-9]/.test(password), /[^A-Za-z0-9]/.test(password)]
-  const strengthScore = strength.filter(Boolean).length
 
   const onSubmit = async (data: RegisterSchema) => {
     setLoading(true)
@@ -204,18 +203,7 @@ export default function RegisterPage(): React.ReactElement {
                       {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
-                  {password.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      <div className="flex gap-1">
-                        {[0, 1, 2, 3].map(i => (
-                          <div key={i} className={['h-1 flex-1 rounded-full transition-all duration-300', i < strengthScore
-                            ? strengthScore <= 1 ? 'bg-red-500' : strengthScore === 2 ? 'bg-amber-500' : strengthScore === 3 ? 'bg-blue-500' : 'bg-emerald-500'
-                            : 'bg-white/10'].join(' ')} />
-                        ))}
-                      </div>
-                      <p className="text-[0.7rem] text-slate-500">{['', 'Weak', 'Fair', 'Good', 'Strong'][strengthScore]} password</p>
-                    </div>
-                  )}
+                  <PasswordStrengthMeter password={password} />
                 </F>
 
                 <F label="Confirm Password" id="password_confirmation" error={errors.password_confirmation?.message} required>
