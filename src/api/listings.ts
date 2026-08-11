@@ -34,6 +34,7 @@ export type ListingHouseType = HouseType
 
 export const UNIT_TYPE_OPTIONS = [
   { label: 'Single Room', value: 'single_room' },
+  { label: 'Double Room', value: 'double_room' },
   { label: 'Bedsitter', value: 'bedsitter' },
   { label: 'Studio', value: 'studio' },
   { label: '1 Bedroom', value: 'one_bedroom' },
@@ -46,6 +47,7 @@ export const UNIT_TYPE_OPTIONS = [
 
 export type UnitType =
   | 'single_room'
+  | 'double_room'
   | 'bedsitter'
   | 'studio'
   | 'one_bedroom'
