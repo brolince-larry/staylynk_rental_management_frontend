@@ -22,7 +22,7 @@ import {
 const credentialSchema = z.object({
   org_id: z.string().min(1, 'Select an organisation'),
   property_id: z.string().optional(),
-  provider: z.enum(['mpesa', 'paypal']),
+  provider: z.enum(['mpesa', 'paypal', 'kcb', 'equity', 'coop', 'stanbic', 'dtb']),
   environment: z.enum(['sandbox', 'production']),
   display_name: z.string().min(2, 'Display name is required').max(120),
   shortcode: z.string().max(50).optional(),
@@ -333,6 +333,11 @@ export default function PaymentCredentials(): React.ReactElement {
               { value: '', label: 'All providers' },
               { value: 'mpesa', label: 'M-Pesa' },
               { value: 'paypal', label: 'PayPal' },
+              { value: 'kcb', label: 'KCB' },
+              { value: 'equity', label: 'Equity Bank' },
+              { value: 'coop', label: 'Co-operative Bank' },
+              { value: 'stanbic', label: 'Stanbic' },
+              { value: 'dtb', label: 'DTB' },
             ]}
           />
         </FilterBar>
@@ -409,6 +414,11 @@ export default function PaymentCredentials(): React.ReactElement {
               options={[
                 { value: 'mpesa', label: 'M-Pesa' },
                 { value: 'paypal', label: 'PayPal' },
+                { value: 'kcb', label: 'KCB' },
+                { value: 'equity', label: 'Equity Bank' },
+                { value: 'coop', label: 'Co-operative Bank' },
+                { value: 'stanbic', label: 'Stanbic' },
+                { value: 'dtb', label: 'DTB' },
               ]}
             />
           </FormField>

@@ -79,7 +79,7 @@ export interface PaginatedResponse<T> {
   links?: Record<string, string | null>
 }
 
-export type PaymentProvider = 'mpesa' | 'paypal'
+export type PaymentProvider = 'mpesa' | 'paypal' | 'kcb' | 'equity' | 'coop' | 'stanbic' | 'dtb'
 
 export interface PaymentCredential {
   id: string
